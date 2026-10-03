@@ -38578,48 +38578,12 @@
     "road": null,
     "nominatimCountry": "Ecuador"
   },
-  "3_CIeWewLcTuUGwEej1YNQ__unique": {
-    "metas": [
-      "ecuador_1789901459183_pdb8b"
-    ],
-    "lat": 0.1019994,
-    "lng": -79.4099157,
-    "country": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": null,
-    "nominatimCountry": "Ecuador"
-  },
   "OpilzqpXLbzFdDhwQtiX2g": {
     "metas": [
       "ecuador_1789901459166_r81w7"
     ],
     "lat": -0.221067,
     "lng": -78.503736,
-    "country": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": null,
-    "nominatimCountry": "Ecuador"
-  },
-  "SZjIhEjLlecegX2lYRJXxQ": {
-    "metas": [
-      "ecuador_1789901459169_ec2su"
-    ],
-    "lat": -0.9709575,
-    "lng": -80.740293,
-    "country": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": null,
-    "nominatimCountry": "Ecuador"
-  },
-  "S1rVJcfLNBltZM1zSL-cQg": {
-    "metas": [
-      "ecuador_1789901459170_9g2th"
-    ],
-    "lat": -2.5620972,
-    "lng": -79.548845,
     "country": "Ecuador",
     "region": null,
     "city": null,
@@ -38686,66 +38650,6 @@
     "road": null,
     "nominatimCountry": "Ecuador"
   },
-  "nvGyNns_BOFxVoawvgZn7g": {
-    "metas": [
-      "ecuador_1789901459180_u956j"
-    ],
-    "lat": -0.2765,
-    "lng": -78.535792,
-    "country": "Ecuador",
-    "region": "Quito Canton",
-    "city": null,
-    "road": null,
-    "nominatimCountry": "Ecuador"
-  },
-  "b8BZwlyx2Jn97h5V-ys_Qw": {
-    "metas": [
-      "ecuador_1789901459184_qyetn"
-    ],
-    "lat": -2.2921257,
-    "lng": -80.75081,
-    "country": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": null,
-    "nominatimCountry": "Ecuador"
-  },
-  "7gNj0DBNsq092c8zyxNlsg": {
-    "metas": [
-      "ecuador_1789901459185_zg6h1"
-    ],
-    "lat": -2.3393014,
-    "lng": -79.635075,
-    "country": "Ecuador",
-    "region": "Guayas",
-    "city": null,
-    "road": null,
-    "nominatimCountry": "Ecuador"
-  },
-  "tEUmQuLLcJOXIkOtFWz-sQ": {
-    "metas": [
-      "ecuador_1789901459186_shrly"
-    ],
-    "lat": 0.0322669,
-    "lng": -76.8289885,
-    "country": "Ecuador",
-    "region": "Sucumb\u00edos",
-    "city": null,
-    "road": null,
-    "nominatimCountry": "Ecuador"
-  },
-  "-7SAL2OL4mKJiW3aJtdUXw": {
-    "metas": [
-      "ecuador_1789901459188_7tht8"
-    ],
-    "lat": -3.9031677,
-    "lng": -79.4199892,
-    "country": "Ecuador",
-    "region": "Loja",
-    "city": null,
-    "road": null,
-    "nominatimCountry": "Ecuador"
-  },
   "17BFRc_XjY3mX_3Rsv73jQ": {
     "metas": [
       "ecuador_1789901459189_1bw85"
@@ -38758,50 +38662,15 @@
     "road": null,
     "nominatimCountry": "Ecuador"
   },
-  "mDzEH85Olk1BQe1XmHp0sQ": {
-    "metas": [
-      "ecuador_1789901459191_11gr6"
-    ],
-    "lat": -3.9355525,
-    "lng": -79.6470189,
-    "country": "Ecuador",
-    "region": "Loja",
-    "city": null,
-    "road": null,
-    "nominatimCountry": "Ecuador"
-  },
   "u28Ivdepa6T4kOeL7AWpLA": {
     "metas": [
-      "ecuador_1789901459192_mcr0p"
+      "ecuador_1789901459192_mcr0p",
+      "ecuador_1791040961907_6gv5m"
     ],
     "lat": -1.894946,
     "lng": -79.553586,
     "country": "Ecuador",
     "region": "Guayas",
-    "city": null,
-    "road": null,
-    "nominatimCountry": "Ecuador"
-  },
-  "pguUSc9LMqbzL5AVmLN8nw": {
-    "metas": [
-      "ecuador_1789901459193_0gb32"
-    ],
-    "lat": -2.3317494,
-    "lng": -80.5344307,
-    "country": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": null,
-    "nominatimCountry": "Ecuador"
-  },
-  "nBqXl1xYzU0FRa7W-f0vGQ": {
-    "metas": [
-      "ecuador_1789901459194_b9gjv"
-    ],
-    "lat": -0.060521,
-    "lng": -76.880124,
-    "country": "Ecuador",
-    "region": null,
     "city": null,
     "road": null,
     "nominatimCountry": "Ecuador"
@@ -41080,5 +40949,801 @@
     "city": null,
     "road": null,
     "nominatimCountry": "Falkland Islands"
+  },
+  "center_ecuador_1789901459185_zg6h1": {
+    "metas": [
+      "ecuador_1789901459185_zg6h1"
+    ],
+    "lat": -1.643043,
+    "lng": -79.584756,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459185_zg6h1_2": {
+    "metas": [
+      "ecuador_1789901459185_zg6h1"
+    ],
+    "lat": -2.50799,
+    "lng": -79.585966,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459183_pdb8b": {
+    "metas": [
+      "ecuador_1789901459183_pdb8b"
+    ],
+    "lat": -1.726592,
+    "lng": -79.710962,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459183_pdb8b_2": {
+    "metas": [
+      "ecuador_1789901459183_pdb8b"
+    ],
+    "lat": -3.030478,
+    "lng": -79.739834,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459183_pdb8b_3": {
+    "metas": [
+      "ecuador_1789901459183_pdb8b"
+    ],
+    "lat": -0.633628,
+    "lng": -79.434833,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -2.242695,
+    "lng": -80.82076,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_2": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -1.979911,
+    "lng": -80.669657,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_3": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -1.013623,
+    "lng": -80.760775,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_4": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -2.332627,
+    "lng": -80.670796,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_5": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -2.632034,
+    "lng": -80.323344,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_6": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -1.403329,
+    "lng": -80.700789,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_7": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -1.818738,
+    "lng": -80.743957,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_8": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -1.132258,
+    "lng": -80.838254,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_9": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -1.550968,
+    "lng": -80.810092,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_10": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -2.25502,
+    "lng": -80.940669,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_11": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -1.667793,
+    "lng": -80.810404,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_12": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -2.120208,
+    "lng": -80.756872,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_13": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -2.540441,
+    "lng": -80.389198,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_14": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -1.280346,
+    "lng": -80.776882,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_15": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -1.017496,
+    "lng": -80.694866,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_16": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -2.717804,
+    "lng": -80.298475,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_17": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -2.316502,
+    "lng": -80.571645,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459184_qyetn_18": {
+    "metas": [
+      "ecuador_1789901459184_qyetn"
+    ],
+    "lat": -1.069795,
+    "lng": -80.826593,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1791039150482_439y5": {
+    "metas": [
+      "ecuador_1791039150482_439y5"
+    ],
+    "lat": -1.331762,
+    "lng": -78.580357,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1791039150482_439y5_2": {
+    "metas": [
+      "ecuador_1791039150482_439y5"
+    ],
+    "lat": -1.178248,
+    "lng": -78.546374,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1791039150482_439y5_3": {
+    "metas": [
+      "ecuador_1791039150482_439y5"
+    ],
+    "lat": -1.625295,
+    "lng": -78.635628,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1791039150482_439y5_4": {
+    "metas": [
+      "ecuador_1791039150482_439y5"
+    ],
+    "lat": -1.434153,
+    "lng": -78.634121,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1791039150482_439y5_5": {
+    "metas": [
+      "ecuador_1791039150482_439y5"
+    ],
+    "lat": -1.382827,
+    "lng": -78.47958,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1791039150482_439y5_6": {
+    "metas": [
+      "ecuador_1791039150482_439y5"
+    ],
+    "lat": -1.686183,
+    "lng": -78.804642,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1791039150482_439y5_7": {
+    "metas": [
+      "ecuador_1791039150482_439y5"
+    ],
+    "lat": -0.382411,
+    "lng": -78.141495,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1791039150482_439y5_8": {
+    "metas": [
+      "ecuador_1791039150482_439y5"
+    ],
+    "lat": -1.257155,
+    "lng": -78.565048,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1791039150482_439y5_9": {
+    "metas": [
+      "ecuador_1791039150482_439y5"
+    ],
+    "lat": -1.56141,
+    "lng": -78.721018,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "-ew03669gcO3XQEj9We84g": {
+    "metas": [
+      "ecuador_1791039414862_hnqa0",
+      "ecuador_1789901459194_b9gjv"
+    ],
+    "lat": -0.17266,
+    "lng": -76.84239,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Sucumb\u00edos",
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459188_7tht8": {
+    "metas": [
+      "ecuador_1789901459188_7tht8"
+    ],
+    "lat": -3.978087,
+    "lng": -79.566577,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "center_ecuador_1789901459188_7tht8_2": {
+    "metas": [
+      "ecuador_1789901459188_7tht8"
+    ],
+    "lat": -3.909489,
+    "lng": -79.256839,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
+  },
+  "cIM4P8aZSEemS8xJjL2v2A": {
+    "metas": [
+      "ecuador_1791039414862_hnqa0"
+    ],
+    "lat": -1.00464,
+    "lng": -77.81055,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Napo",
+    "city": null,
+    "road": null
+  },
+  "kgbI1xCGVGjZqIFqbxkLUw": {
+    "metas": [
+      "ecuador_1791039414862_hnqa0",
+      "ecuador_1789901459194_b9gjv"
+    ],
+    "lat": -0.64072,
+    "lng": -76.88766,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Orellana",
+    "city": null,
+    "road": null
+  },
+  "ylD4G4NAYRKSFEL6KAt5rg": {
+    "metas": [
+      "ecuador_1791040961907_6gv5m",
+      "ecuador_1791045363904_pnxtc"
+    ],
+    "lat": 0.8082,
+    "lng": -79.59126,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Esmeraldas",
+    "city": null,
+    "road": null
+  },
+  "I0gdA5tAf8JMjY0_j681oQ": {
+    "metas": [
+      "ecuador_1791040961907_6gv5m"
+    ],
+    "lat": -0.09536,
+    "lng": -79.60061,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Manab\u00ed",
+    "city": null,
+    "road": null
+  },
+  "Kp1WGSyTUPju_6p0UQzGgw": {
+    "metas": [
+      "ecuador_1791040961907_6gv5m"
+    ],
+    "lat": -2.2069,
+    "lng": -80.97074,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Santa Elena",
+    "city": null,
+    "road": null
+  },
+  "jFjni3mYJ5CPW4r8jKh1Fg": {
+    "metas": [
+      "ecuador_1791040961907_6gv5m"
+    ],
+    "lat": -1.00874,
+    "lng": -79.44599,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Los R\u00edos",
+    "city": null,
+    "road": null
+  },
+  "nua6Wsnv3AQTDtL4IQ5Yvw": {
+    "metas": [
+      "ecuador_1791040961907_6gv5m"
+    ],
+    "lat": -0.07299,
+    "lng": -79.26887,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Santo Domingo de los Ts\u00e1chilas",
+    "city": null,
+    "road": null
+  },
+  "Ia4hKsB66wv7iEJ8BTb4Yg": {
+    "metas": [
+      "ecuador_1789901459193_0gb32"
+    ],
+    "lat": -2.20623,
+    "lng": -80.06893,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "V\u00eda a la Costa"
+  },
+  "fxkAqP6nVOsWRZ5zwzOGVQ": {
+    "metas": [
+      "ecuador_1791042933283_bf5vq"
+    ],
+    "lat": -3.45305,
+    "lng": -79.96202,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "El Oro",
+    "city": "Santa Rosa",
+    "road": null
+  },
+  "zZ4UdTH6xh-dWQZyrQpd-A": {
+    "metas": [
+      "ecuador_1791043029009_b6e52"
+    ],
+    "lat": -0.69685,
+    "lng": -80.0928,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Manab\u00ed",
+    "city": "Chone",
+    "road": null
+  },
+  "0JAitLgSU5sjj13lFtc13A": {
+    "metas": [
+      "ecuador_1791043096749_k30bi"
+    ],
+    "lat": -0.12605,
+    "lng": -76.34196,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Sucumbios",
+    "city": "Tarapoa",
+    "road": null
+  },
+  "ffCnCb7l16aHRn7m6J_-FA": {
+    "metas": [
+      "ecuador_1791043144965_pwo2z"
+    ],
+    "lat": -1.3965,
+    "lng": -78.4245,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Tungurahua",
+    "city": "Ba\u00f1os de Agua Santa",
+    "road": null
+  },
+  "_jOuLXMHYRuNLv9msTySsA": {
+    "metas": [
+      "ecuador_1791043210309_zg3gp"
+    ],
+    "lat": 1.06814,
+    "lng": -79.4162,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Esmeraldas",
+    "city": "Palestina",
+    "road": null
+  },
+  "F4lS2zHtk7EUFA2TeIiNXg": {
+    "metas": [
+      "ecuador_1791043325819_nf322"
+    ],
+    "lat": -0.1877,
+    "lng": -76.64975,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Sucumb\u00edos",
+    "city": "Shushufindi",
+    "road": null
+  },
+  "Hr-Kb447j042txmm5fwoUQ": {
+    "metas": [
+      "ecuador_1791043376728_2v065"
+    ],
+    "lat": 0.08447,
+    "lng": -76.91452,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Sucumb\u00edos",
+    "city": "Nueva Loja",
+    "road": null
+  },
+  "vFu7NZIqsgG-7SWFskuPnQ": {
+    "metas": [
+      "ecuador_1791043426225_t82ic"
+    ],
+    "lat": -1.06105,
+    "lng": -80.45305,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Manab\u00ed",
+    "city": "Portoviejo",
+    "road": null
+  },
+  "mDxOJN6AL2IR0RCWTPPGnw": {
+    "metas": [
+      "ecuador_1791043684768_enymh",
+      "ecuador_1791045203234_r4wzt"
+    ],
+    "lat": 0.96895,
+    "lng": -79.65461,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Esmeraldas",
+    "city": "Esmeraldas",
+    "road": null
+  },
+  "CjHt_p4h3cjx_oKruJD51Q": {
+    "metas": [
+      "ecuador_1791043720063_1lupo"
+    ],
+    "lat": -2.20878,
+    "lng": -80.96326,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Santa Elena",
+    "city": "Salinas",
+    "road": null
+  },
+  "SOjsNQ7KNeG7r9uNg_IRwQ": {
+    "metas": [
+      "ecuador_1791043757678_fpt1i"
+    ],
+    "lat": -1.66508,
+    "lng": -78.6599,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Chimborazo",
+    "city": "Riobamba",
+    "road": null
+  },
+  "-NdFgOILxS0SWw1cglPBuQ": {
+    "metas": [
+      "ecuador_1791043780475_inznf"
+    ],
+    "lat": -3.99663,
+    "lng": -79.2064,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Loja",
+    "city": "Loja",
+    "road": null
+  },
+  "zE85DMdBzJyjVV5cRC7QMA": {
+    "metas": [
+      "ecuador_1791043814503_8qpon"
+    ],
+    "lat": 0.81206,
+    "lng": -77.71985,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Carchi",
+    "city": "Tulc\u00e1n",
+    "road": null
+  },
+  "H6gB6rgbCFJITqAY0zF7Jg": {
+    "metas": [
+      "ecuador_1791043968736_m1mk5"
+    ],
+    "lat": -0.25818,
+    "lng": -79.16784,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Santo Domingo de los Tsachilas",
+    "city": "Santo Domingo",
+    "road": null
+  },
+  "CAoSF0NJSE0wb2dLRUlDQWdJQ1hvNUhUeGdF": {
+    "metas": [
+      "ecuador_1791044039588_e4s4o"
+    ],
+    "lat": -2.18442,
+    "lng": -79.89795,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Guayas",
+    "city": "Guayaquil",
+    "road": null
+  },
+  "3qNzt-wfPodSEG6lomdPRg": {
+    "metas": [
+      "ecuador_1791044081430_wieua"
+    ],
+    "lat": -1.28812,
+    "lng": -78.61589,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Tungurahua",
+    "city": "Ambato",
+    "road": null
+  },
+  "CAoSF0NJSE0wb2dLRUlDQWdJQ0U1cFNTNFFF": {
+    "metas": [
+      "ecuador_1791044109588_a0wqt"
+    ],
+    "lat": -2.90504,
+    "lng": -79.00408,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Azuay",
+    "city": "Cuenca",
+    "road": null
+  },
+  "I0Llt2a9s1oi7miL262ggw": {
+    "metas": [
+      "ecuador_1791044132153_4nuwz"
+    ],
+    "lat": -0.2456,
+    "lng": -78.50257,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Pichincha",
+    "city": "Quito",
+    "road": null
+  },
+  "wEJDGkeE8BxN9lD8OQ0HxA": {
+    "metas": [
+      "ecuador_1791044207217_8p7r3"
+    ],
+    "lat": 0.33816,
+    "lng": -78.11277,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Imbabura",
+    "city": "Ibarra",
+    "road": null
+  },
+  "wl4swbbC9QBBXsL4gOnxCg": {
+    "metas": [
+      "ecuador_1791044729318_6v9cm"
+    ],
+    "lat": -4.39146,
+    "lng": -80.25912,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Loja",
+    "city": null,
+    "road": null
+  },
+  "RKZMYE3EnPGA9drrWOcBMw": {
+    "metas": [
+      "ecuador_1791044729318_6v9cm"
+    ],
+    "lat": -4.45552,
+    "lng": -79.15036,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Zamora Chinchipe",
+    "city": null,
+    "road": null
+  },
+  "w1VZiWnjaYooohfjW7XdPQ": {
+    "metas": [
+      "ecuador_1791045068223_21iqu"
+    ],
+    "lat": -3.25516,
+    "lng": -79.95393,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "El Oro",
+    "city": "Machala",
+    "road": null
+  },
+  "9QtRy7n1n8_GYPQo1tjZGw": {
+    "metas": [
+      "ecuador_1791045512219_imsrx"
+    ],
+    "lat": -1.02577,
+    "lng": -79.46429,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Los R\u00edos",
+    "city": "Quevedo",
+    "road": null
   }
 }
