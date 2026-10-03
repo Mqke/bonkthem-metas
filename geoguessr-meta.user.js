@@ -529,6 +529,157 @@
         return { lat: Number(x.toFixed(6)), lng: Number(lng.toFixed(6)) };
     }
 
+    // ---- Covering a landscape with several centers -----------------------------------
+    // A distance scope matches every location within `radius` km of an entry (see
+    // getDistanceForScope), so a zone wider than the radius needs several entries.
+    // Greedy maximum coverage: repeatedly pick the center that covers the most
+    // still-uncovered locations, until none is worth adding.
+    const LANDSCAPE_EARTH_RADIUS_KM = 6371;
+    const LANDSCAPE_MAX_CENTERS = 30;          // hard cap of entries per meta
+    const LANDSCAPE_MIN_GAIN_RATIO = 0.01;     // a center must cover >= 1% of the locations
+    const LANDSCAPE_MAX_SAMPLE_POINTS = 3000;  // big files are sampled (evenly, deterministic)
+    const LANDSCAPE_MAX_POINT_CANDIDATES = 2000;
+    const LANDSCAPE_MAX_GRID_CANDIDATES = 2000;
+
+    function latLngToUnitVector(lat, lng) {
+        const la = lat * Math.PI / 180;
+        const lo = lng * Math.PI / 180;
+        return [Math.cos(la) * Math.cos(lo), Math.cos(la) * Math.sin(lo), Math.sin(la)];
+    }
+
+    function sampleLandscapePoints(points, maxCount) {
+        if (points.length <= maxCount) return points;
+        let seed = 12345;
+        const random = () => {
+            seed = (seed * 1664525 + 1013904223) >>> 0;
+            return seed / 4294967296;
+        };
+        const copy = points.slice();
+        for (let i = 0; i < maxCount; i++) {
+            const j = i + Math.floor(random() * (copy.length - i));
+            const tmp = copy[i];
+            copy[i] = copy[j];
+            copy[j] = tmp;
+        }
+        return copy.slice(0, maxCount);
+    }
+
+    // Returns the centers ({ lat, lng }) needed to cover the landscape with discs of
+    // `radiusKm`, most useful first. A single center (the geometric median) is returned
+    // when it already covers the zone.
+    function computeLandscapeCenters(points, radiusKm) {
+        if (!points.length) return [];
+        const chord2 = Math.pow(2 * Math.sin(radiusKm / (2 * LANDSCAPE_EARTH_RADIUS_KM)), 2);
+        const roundCenter = (lat, lng) => ({ lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) });
+
+        // 1. One central location is enough if it covers (almost) every location.
+        const median = computeGeometricMedian(points);
+        const medianVec = latLngToUnitVector(median.lat, median.lng);
+        let insideMedian = 0;
+        points.forEach(pt => {
+            const v = latLngToUnitVector(pt.lat, pt.lng);
+            const d2 = (v[0] - medianVec[0]) ** 2 + (v[1] - medianVec[1]) ** 2 + (v[2] - medianVec[2]) ** 2;
+            if (d2 <= chord2) insideMedian++;
+        });
+        if (insideMedian >= points.length * (1 - LANDSCAPE_MIN_GAIN_RATIO)) return [median];
+
+        // 2. Greedy maximum coverage on unit vectors (exact distances, no projection).
+        const sample = sampleLandscapePoints(points, LANDSCAPE_MAX_SAMPLE_POINTS);
+        const n = sample.length;
+        const xs = new Float64Array(n);
+        const ys = new Float64Array(n);
+        const zs = new Float64Array(n);
+        sample.forEach((pt, i) => {
+            const v = latLngToUnitVector(pt.lat, pt.lng);
+            xs[i] = v[0]; ys[i] = v[1]; zs[i] = v[2];
+        });
+
+        // Candidates: some of the locations themselves + a grid over the zone.
+        const candidates = sampleLandscapePoints(sample, LANDSCAPE_MAX_POINT_CANDIDATES)
+            .map(pt => latLngToUnitVector(pt.lat, pt.lng));
+
+        const refLng = sample[0].lng;
+        const relLng = lng => (((lng - refLng + 180) % 360) + 360) % 360 - 180;
+        let minLat = Infinity, maxLat = -Infinity, minRel = Infinity, maxRel = -Infinity, sumLat = 0;
+        sample.forEach(pt => {
+            const rel = relLng(pt.lng);
+            minLat = Math.min(minLat, pt.lat);
+            maxLat = Math.max(maxLat, pt.lat);
+            minRel = Math.min(minRel, rel);
+            maxRel = Math.max(maxRel, rel);
+            sumLat += pt.lat;
+        });
+        const cosLat = Math.max(0.05, Math.cos(sumLat / n * Math.PI / 180));
+        const radiusDeg = radiusKm / 111.195;
+        let stepDeg = Math.max(radiusDeg / 3,
+            Math.sqrt((maxLat - minLat) * (maxRel - minRel) * cosLat / LANDSCAPE_MAX_GRID_CANDIDATES));
+        if (!(stepDeg > 0)) stepDeg = radiusDeg / 3;
+        for (let lat = minLat; lat <= maxLat + stepDeg; lat += stepDeg) {
+            for (let rel = minRel; rel <= maxRel + stepDeg / cosLat; rel += stepDeg / cosLat) {
+                candidates.push(latLngToUnitVector(Math.max(-90, Math.min(90, lat)), refLng + rel));
+            }
+        }
+
+        const uncovered = new Uint8Array(n).fill(1);
+        const countUncovered = c => {
+            let count = 0;
+            for (let i = 0; i < n; i++) {
+                if (!uncovered[i]) continue;
+                const dx = xs[i] - c[0], dy = ys[i] - c[1], dz = zs[i] - c[2];
+                if (dx * dx + dy * dy + dz * dz <= chord2) count++;
+            }
+            return count;
+        };
+
+        // Lazy greedy: gains only decrease, so a stale gain is an upper bound.
+        const upper = candidates.map(countUncovered);
+        const freshRound = new Int32Array(candidates.length).fill(-1);
+        const minGain = Math.max(1, Math.ceil(LANDSCAPE_MIN_GAIN_RATIO * n));
+        const centers = [];
+        for (let round = 0; round < LANDSCAPE_MAX_CENTERS; round++) {
+            let best = -1;
+            for (;;) {
+                let bi = -1, bv = 0;
+                for (let c = 0; c < upper.length; c++) {
+                    if (upper[c] > bv) { bv = upper[c]; bi = c; }
+                }
+                if (bi < 0) break;
+                if (freshRound[bi] === round) { best = bi; break; }
+                upper[bi] = countUncovered(candidates[bi]);
+                freshRound[bi] = round;
+            }
+            if (best < 0) break;
+            // The first center is always kept; further ones must be worth it.
+            if (centers.length > 0 && upper[best] < minGain) break;
+
+            const c = candidates[best];
+            for (let i = 0; i < n; i++) {
+                if (!uncovered[i]) continue;
+                const dx = xs[i] - c[0], dy = ys[i] - c[1], dz = zs[i] - c[2];
+                if (dx * dx + dy * dy + dz * dz <= chord2) uncovered[i] = 0;
+            }
+            upper[best] = 0;
+            centers.push(roundCenter(
+                Math.atan2(c[2], Math.hypot(c[0], c[1])) * 180 / Math.PI,
+                Math.atan2(c[1], c[0]) * 180 / Math.PI
+            ));
+        }
+        return centers;
+    }
+
+    // Centers of an imported landscape for the scope the meta is saved with, each
+    // carrying the country found at import time.
+    function buildLandscapeCenters(landscapeImport, scope) {
+        if (!landscapeImport || !landscapeImport.points?.length) return null;
+        const radiusKm = getDistanceForScope(scope);
+        if (!(radiusKm > 0)) return null;
+        return computeLandscapeCenters(landscapeImport.points, radiusKm).map(center => ({
+            ...center,
+            country: landscapeImport.country || null,
+            nominatimCountry: landscapeImport.nominatimCountry || null
+        }));
+    }
+
     // Country of a coordinate (English names, same source as the rest of the script).
     // Falls back to the country of the current location if the lookup fails.
     async function geocodeCountryForCoordinates(lat, lng) {
@@ -550,10 +701,59 @@
         };
     }
 
-    // Adds (or replaces) the centre location of a landscape meta. The entry is always
-    // rebuilt as a new object, so a previous map snapshot is never mutated.
-    function setLandscapeCenterEntry(locations, metaId, center) {
-        locations[getLandscapeCenterKey(metaId)] = {
+    function isLandscapeCenterKey(key) {
+        return String(key).startsWith(LANDSCAPE_CENTER_KEY_PREFIX);
+    }
+
+    function isSameCoordinate(a, b) {
+        const x = normalizeCoordinate(a);
+        const y = normalizeCoordinate(b);
+        return x !== null && y !== null && Math.abs(x - y) < 1e-6;
+    }
+
+    function hasLandscapeCenterEntry(locations, metaId) {
+        return Object.keys(locations || {}).some(key =>
+            isLandscapeCenterKey(key) && getLocationMetaIds(locations[key]).includes(metaId));
+    }
+
+    // Unlinks the meta from every centre entry it is in (an entry left without any
+    // meta is deleted). Entries are replaced, never mutated, so a previous map
+    // snapshot (used for rollback) stays intact.
+    function removeLandscapeCenterEntry(locations, metaId) {
+        Object.keys(locations).forEach(key => {
+            if (!isLandscapeCenterKey(key)) return;
+            const entry = normalizeLocationEntry(locations[key]);
+            if (!entry || !entry.metas.includes(metaId)) return;
+
+            const remaining = entry.metas.filter(id => id !== metaId);
+            if (remaining.length === 0) {
+                delete locations[key];
+            } else {
+                locations[key] = { ...entry, metas: remaining };
+            }
+        });
+    }
+
+    // Links the meta to ONE centre location. If a centre entry already exists at the same
+    // coordinates (e.g. created for another meta of the same landscape), the meta is
+    // added to its list of metas instead of creating a duplicate location.
+    // Returns the key of the entry holding the meta.
+    function addLandscapeCenterEntry(locations, metaId, center) {
+        const sharedKey = Object.keys(locations).find(key =>
+            isLandscapeCenterKey(key) &&
+            isSameCoordinate(locations[key]?.lat, center.lat) &&
+            isSameCoordinate(locations[key]?.lng, center.lng));
+        if (sharedKey) {
+            const entry = normalizeLocationEntry(locations[sharedKey]);
+            locations[sharedKey] = { ...entry, metas: Array.from(new Set([...entry.metas, metaId])) };
+            return sharedKey;
+        }
+
+        const baseKey = getLandscapeCenterKey(metaId);
+        let key = baseKey;
+        let counter = 2;
+        while (locations[key]) key = `${baseKey}_${counter++}`;
+        locations[key] = {
             metas: [metaId],
             lat: center.lat,
             lng: center.lng,
@@ -563,10 +763,14 @@
             city: null,
             road: null
         };
+        return key;
     }
 
-    function removeLandscapeCenterEntry(locations, metaId) {
-        delete locations[getLandscapeCenterKey(metaId)];
+    // Replaces ALL the centres of the meta (previous ones are dropped first, so
+    // re-importing moves them). Returns the keys of the entries holding the meta.
+    function setLandscapeCenterEntries(locations, metaId, centers) {
+        removeLandscapeCenterEntry(locations, metaId);
+        return centers.map(center => addLandscapeCenterEntry(locations, metaId, center));
     }
 
     function normalizeLocationMap(value) {
@@ -3210,7 +3414,7 @@
                 }
                 const median = computeGeometricMedian(points);
                 const countryInfo = await geocodeCountryForCoordinates(median.lat, median.lng);
-                landscapeCenterState[formKey] = { ...median, ...countryInfo };
+                landscapeCenterState[formKey] = { points, ...countryInfo };
             } catch (err) {
                 console.error('[BetterMetas] Landscape import failed:', err);
                 landscapeCenterState[formKey] = null;
@@ -3334,12 +3538,14 @@
 
     function getAdminMetaLinkedLocations(metaId) {
         const linkedLocations = [];
+        const metaScope = getMetaById(metaId)?.scope;
         forEachCombinedLocationEntry((panoid, rawEntry) => {
             const entry = normalizeLocationEntry(rawEntry);
             if (!entry || !getLocationMetaIds(entry).includes(metaId)) return;
             linkedLocations.push({
                 panoid,
                 ...entry,
+                scope: metaScope,
                 displayCountry: entry.country || entry.nominatimCountry || ''
             });
         });
@@ -3347,6 +3553,16 @@
     }
 
     function formatAdminLocationLabel(location) {
+        // Distance scopes (100km / 10km / 1km) are located by coordinates, not by name:
+        // "<lat> <lng> (<scope>)", so they are told apart from countrywide / region / city / road.
+        if (isLandscapeScope(location.scope)) {
+            const lat = normalizeCoordinate(location.lat);
+            const lng = normalizeCoordinate(location.lng);
+            if (lat !== null && lng !== null) {
+                return `${lat.toFixed(6)} ${lng.toFixed(6)} (${normalizeScope(location.scope)})`;
+            }
+        }
+
         const parts = [
             location.displayCountry || 'Unknown country',
             formatLocationValue(location.region),
@@ -3635,15 +3851,17 @@
         refreshDisplay();
     }
 
-    function applyLocalLandscapeCenter(metaId, center) {
+    function applyLocalLandscapeCenters(metaId, centers) {
         const updatedMap = { ...userLocationMap };
-        setLandscapeCenterEntry(updatedMap, metaId, center);
+        const keys = setLandscapeCenterEntries(updatedMap, metaId, centers);
         userLocationMap = updatedMap;
         proximityIndexDirty = true;
 
-        const key = getLandscapeCenterKey(metaId);
         const pending = loadPendingLocalChanges();
-        pending.locations[key] = { ...updatedMap[key] };
+        removeLandscapeCenterEntry(pending.locations, metaId);
+        keys.forEach(key => {
+            pending.locations[key] = { ...updatedMap[key] };
+        });
         savePendingLocalChanges(pending);
     }
 
@@ -3654,7 +3872,7 @@
         proximityIndexDirty = true;
 
         const pending = loadPendingLocalChanges();
-        delete pending.locations[getLandscapeCenterKey(metaId)];
+        removeLandscapeCenterEntry(pending.locations, metaId);
         savePendingLocalChanges(pending);
     }
 
@@ -5216,6 +5434,7 @@
         const locationLabel = formatAdminLocationLabel({
             panoid,
             ...entry,
+            scope: meta?.scope,
             displayCountry: entry.country || entry.nominatimCountry || ''
         });
         const willDeleteLocation = getLocationMetaIds(entry).length <= 1;
@@ -5277,7 +5496,7 @@
         const tags = normalizeTags(tagsStr);
         const rawImageValue = document.getElementById('meta-image').value;
         const scope = normalizeScope(document.getElementById('meta-scope').value);
-        const landscapeCenter = isLandscapeScope(scope) ? landscapeCenterState.create : null;
+        const landscapeCenters = isLandscapeScope(scope) ? buildLandscapeCenters(landscapeCenterState.create, scope) : null;
 
         if (!title || !desc) {
             await showToolAlert('Missing Details', 'Please fill in Title and Description.');
@@ -5337,7 +5556,7 @@
 
         try {
             applyLocalSavedMeta(newMeta, panoid);
-            if (landscapeCenter) applyLocalLandscapeCenter(newMeta.id, landscapeCenter);
+            if (landscapeCenters) applyLocalLandscapeCenters(newMeta.id, landscapeCenters);
             updateStatus('Saved. Syncing...');
             hideMetaModal();
             hideBackdrop();
@@ -5361,7 +5580,7 @@
                 normalizeLocationMap,
                 locations => {
                     addMetaIdsToLocationMap(locations, panoid, [newMeta.id], newMeta.scope);
-                    if (landscapeCenter) setLandscapeCenterEntry(locations, newMeta.id, landscapeCenter);
+                    if (landscapeCenters) setLandscapeCenterEntries(locations, newMeta.id, landscapeCenters);
                     return locations;
                 },
                 `Link ${panoid} to ${newMeta.id} via BetterMetas`
@@ -5407,7 +5626,8 @@
         }
 
         // Captured now: reopening the details view (below) resets the pending import.
-        const landscapeCenter = isLandscapeScope(updatedMeta.scope) ? landscapeCenterState.admin : null;
+        const landscapeImport = isLandscapeScope(updatedMeta.scope) ? landscapeCenterState.admin : null;
+        const landscapeCenters = buildLandscapeCenters(landscapeImport, updatedMeta.scope);
 
         const source = getAdminMetaSource(existingMeta.id);
         const saveBtn = document.getElementById('gg-admin-save-btn');
@@ -5442,11 +5662,11 @@
             }
 
             // Landscape center: set/replace it for 100km/10km/1km, drop it for any other scope.
-            const hadCenterEntry = !!userLocationMap[getLandscapeCenterKey(savedMetaId)];
-            const removeCenter = source === 'user' && !landscapeCenter &&
+            const hadCenterEntry = hasLandscapeCenterEntry(userLocationMap, savedMetaId);
+            const removeCenter = source === 'user' && !landscapeCenters &&
                 !isLandscapeScope(updatedMeta.scope) && hadCenterEntry;
-            if (landscapeCenter) {
-                applyLocalLandscapeCenter(savedMetaId, landscapeCenter);
+            if (landscapeCenters) {
+                applyLocalLandscapeCenters(savedMetaId, landscapeCenters);
             } else if (removeCenter) {
                 applyLocalLandscapeCenterRemoval(savedMetaId);
             }
@@ -5488,19 +5708,19 @@
                     );
                 }
 
-                if (landscapeCenter || removeCenter) {
+                if (landscapeCenters || removeCenter) {
                     await updateLocalJsonFileIfChanged(
                         USER_LOCATIONS_FILE,
                         normalizeLocationMap,
                         locations => {
-                            if (landscapeCenter) {
-                                setLandscapeCenterEntry(locations, existingMeta.id, landscapeCenter);
+                            if (landscapeCenters) {
+                                setLandscapeCenterEntries(locations, existingMeta.id, landscapeCenters);
                             } else {
                                 removeLandscapeCenterEntry(locations, existingMeta.id);
                             }
                             return locations;
                         },
-                        `${landscapeCenter ? 'Set' : 'Remove'} landscape center of meta ${existingMeta.id} via BetterMetas`
+                        `${landscapeCenters ? 'Set' : 'Remove'} landscape center of meta ${existingMeta.id} via BetterMetas`
                     );
                 }
             } else {
@@ -5522,7 +5742,7 @@
         } catch (err) {
             console.error(err);
             restoreLocalDataSnapshot(snapshot);
-            landscapeCenterState.admin = landscapeCenter; // keep the import so the user can retry
+            landscapeCenterState.admin = landscapeImport; // keep the import so the user can retry
             refreshLandscapeImportUi('admin');
             await showToolAlert('Save Failed', err.message || String(err));
             updateStatus('Save Failed');

@@ -41080,17 +41080,5 @@
     "city": null,
     "road": null,
     "nominatimCountry": "Falkland Islands"
-  },
-  "center_ecuador_1791026812584_lk5az": {
-    "metas": [
-      "ecuador_1791026812584_lk5az"
-    ],
-    "lat": -2.039681,
-    "lng": -79.834251,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": null
   }
 }
