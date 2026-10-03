@@ -38568,8 +38568,7 @@
       "ecuador_1790077965792_z5126",
       "ecuador_1790078090806_p5oqr",
       "ecuador_1789901459177_nu5pm",
-      "ecuador_1790162832778_bjoys",
-      "ecuador_1791026812584_lk5az"
+      "ecuador_1790162832778_bjoys"
     ],
     "lat": 0.1019994,
     "lng": -79.4099157,
@@ -41081,5 +41080,17 @@
     "city": null,
     "road": null,
     "nominatimCountry": "Falkland Islands"
+  },
+  "center_ecuador_1791026812584_lk5az": {
+    "metas": [
+      "ecuador_1791026812584_lk5az"
+    ],
+    "lat": -2.039681,
+    "lng": -79.834251,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": null
   }
 }

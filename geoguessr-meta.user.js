@@ -457,6 +457,118 @@
         return addMetaIdsToLocationMap(locations, panoid, [metaId], newScope);
     }
 
+    // ---- Landscape import (scopes 100km / 10km / 1km) -------------------------------
+    // A landscape file (Map-Making-App style: { customCoordinates: [{ lat, lng, ... }] })
+    // describes a zone. Its central location is stored as an extra location entry linked
+    // to the meta, under a dedicated key so it never collides with a panoid entry.
+    const LANDSCAPE_SCOPES = ['100km', '10km', '1km'];
+    const LANDSCAPE_CENTER_KEY_PREFIX = 'center_';
+
+    function isLandscapeScope(scope) {
+        return LANDSCAPE_SCOPES.includes(normalizeScope(scope));
+    }
+
+    function getLandscapeCenterKey(metaId) {
+        return `${LANDSCAPE_CENTER_KEY_PREFIX}${metaId}`;
+    }
+
+    function extractLandscapePoints(json) {
+        const list = Array.isArray(json) ? json
+            : Array.isArray(json?.customCoordinates) ? json.customCoordinates
+            : Array.isArray(json?.locations) ? json.locations
+            : null;
+        if (!list) return [];
+        return list
+            .map(item => ({
+                lat: normalizeCoordinate(item?.lat ?? item?.latitude),
+                lng: normalizeCoordinate(item?.lng ?? item?.lon ?? item?.longitude)
+            }))
+            .filter(pt => pt.lat !== null && pt.lng !== null && Math.abs(pt.lat) <= 90 && Math.abs(pt.lng) <= 180);
+    }
+
+    // Geometric median (Weiszfeld): the point minimising the sum of distances to all
+    // panoramas. Unlike the mean or the bounding-box centre it is not dragged away by
+    // a few distant outliers. Longitude is scaled by cos(lat) so distances are ~metric.
+    function computeGeometricMedian(points) {
+        const count = points.length;
+        if (count === 0) return null;
+
+        const refLng = points[0].lng;
+        const unwrapLng = lng => {
+            let diff = lng - refLng;
+            while (diff > 180) diff -= 360;
+            while (diff < -180) diff += 360;
+            return refLng + diff;
+        };
+        const meanLat = points.reduce((sum, pt) => sum + pt.lat, 0) / count;
+        const k = Math.cos(meanLat * Math.PI / 180) || 1e-6;
+        const xs = points.map(pt => pt.lat);
+        const ys = points.map(pt => unwrapLng(pt.lng) * k);
+
+        let x = xs.reduce((a, b) => a + b, 0) / count;
+        let y = ys.reduce((a, b) => a + b, 0) / count;
+        for (let iter = 0; iter < 1000; iter++) {
+            let num = 0, numY = 0, den = 0;
+            for (let i = 0; i < count; i++) {
+                const dist = Math.max(Math.hypot(xs[i] - x, ys[i] - y), 1e-12);
+                num += xs[i] / dist;
+                numY += ys[i] / dist;
+                den += 1 / dist;
+            }
+            const nextX = num / den;
+            const nextY = numY / den;
+            const moved = Math.hypot(nextX - x, nextY - y);
+            x = nextX;
+            y = nextY;
+            if (moved < 1e-10) break;
+        }
+
+        let lng = y / k;
+        while (lng > 180) lng -= 360;
+        while (lng < -180) lng += 360;
+        return { lat: Number(x.toFixed(6)), lng: Number(lng.toFixed(6)) };
+    }
+
+    // Country of a coordinate (English names, same source as the rest of the script).
+    // Falls back to the country of the current location if the lookup fails.
+    async function geocodeCountryForCoordinates(lat, lng) {
+        try {
+            const url = `https://nominatim.openstreetmap.org/reverse?format=json&zoom=3&lat=${lat}&lon=${lng}&accept-language=en`;
+            const response = await fetch(url);
+            const data = await response.json();
+            const name = data?.address?.country;
+            if (name) {
+                const country = normalizeCountry(name, lat, lng);
+                return { country, nominatimCountry: country };
+            }
+        } catch (err) {
+            console.warn('[BetterMetas] Landscape country lookup failed:', err);
+        }
+        return {
+            country: currentLocationData.country || currentLocationData.nominatimCountry || null,
+            nominatimCountry: currentLocationData.nominatimCountry || currentLocationData.country || null
+        };
+    }
+
+    // Adds (or replaces) the centre location of a landscape meta. The entry is always
+    // rebuilt as a new object, so a previous map snapshot is never mutated.
+    function setLandscapeCenterEntry(locations, metaId, center) {
+        locations[getLandscapeCenterKey(metaId)] = {
+            metas: [metaId],
+            lat: center.lat,
+            lng: center.lng,
+            country: center.country || null,
+            nominatimCountry: center.nominatimCountry || null,
+            region: null,
+            city: null,
+            road: null
+        };
+    }
+
+    function removeLandscapeCenterEntry(locations, metaId) {
+        delete locations[getLandscapeCenterKey(metaId)];
+    }
+
     function normalizeLocationMap(value) {
         if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
 
@@ -3059,6 +3171,55 @@
         return changed;
     }
 
+    const LANDSCAPE_FORMS = {
+        create: { box: 'meta-landscape-import', btn: 'meta-landscape-btn', file: 'meta-landscape-file', scope: 'meta-scope' },
+        admin: { box: 'gg-admin-landscape-import', btn: 'gg-admin-landscape-btn', file: 'gg-admin-landscape-file', scope: 'gg-admin-meta-scope' }
+    };
+    // Centre computed from an imported file, waiting for the form to be saved.
+    const landscapeCenterState = { create: null, admin: null };
+
+    // The import button is only shown for 100km / 10km / 1km.
+    function refreshLandscapeImportUi(formKey) {
+        const cfg = LANDSCAPE_FORMS[formKey];
+        const box = document.getElementById(cfg.box);
+        if (!box) return;
+
+        const scope = document.getElementById(cfg.scope)?.value;
+        const visible = !!scope && isLandscapeScope(scope);
+        box.style.display = visible ? '' : 'none';
+        if (!visible) landscapeCenterState[formKey] = null;
+    }
+
+    function initLandscapeImport(formKey) {
+        const cfg = LANDSCAPE_FORMS[formKey];
+        const btn = document.getElementById(cfg.btn);
+        const fileInput = document.getElementById(cfg.file);
+        if (!btn || !fileInput) return;
+
+        btn.addEventListener('click', () => {
+            fileInput.value = '';
+            fileInput.click();
+        });
+        fileInput.addEventListener('change', async () => {
+            const file = fileInput.files && fileInput.files[0];
+            if (!file) return;
+            try {
+                const points = extractLandscapePoints(JSON.parse(await file.text()));
+                if (points.length === 0) {
+                    throw new Error('No coordinates found. Expected { "customCoordinates": [{ "lat": ..., "lng": ... }] }.');
+                }
+                const median = computeGeometricMedian(points);
+                const countryInfo = await geocodeCountryForCoordinates(median.lat, median.lng);
+                landscapeCenterState[formKey] = { ...median, ...countryInfo };
+            } catch (err) {
+                console.error('[BetterMetas] Landscape import failed:', err);
+                landscapeCenterState[formKey] = null;
+                await showToolAlert('Import Failed', err.message || String(err));
+            }
+            refreshLandscapeImportUi(formKey);
+        });
+    }
+
     function setAdminScopeSelection(scope) {
         const normalizedScope = normalizeScope(scope);
         const scopeContainer = document.getElementById('gg-admin-scope-presets');
@@ -3066,6 +3227,7 @@
         if (!scopeContainer || !scopeInput) return;
 
         scopeInput.value = normalizedScope;
+        refreshLandscapeImportUi('admin');
         scopeContainer.querySelectorAll('.gg-tag-pill').forEach(pill => {
             pill.classList.toggle('gg-tag-selected', pill.dataset.value === normalizedScope);
         });
@@ -3471,6 +3633,29 @@
             linkedMetaIds: Array.from(getLinkedMetaIdsForPanoid(userLocationMap, panoid))
         });
         refreshDisplay();
+    }
+
+    function applyLocalLandscapeCenter(metaId, center) {
+        const updatedMap = { ...userLocationMap };
+        setLandscapeCenterEntry(updatedMap, metaId, center);
+        userLocationMap = updatedMap;
+        proximityIndexDirty = true;
+
+        const key = getLandscapeCenterKey(metaId);
+        const pending = loadPendingLocalChanges();
+        pending.locations[key] = { ...updatedMap[key] };
+        savePendingLocalChanges(pending);
+    }
+
+    function applyLocalLandscapeCenterRemoval(metaId) {
+        const updatedMap = { ...userLocationMap };
+        removeLandscapeCenterEntry(updatedMap, metaId);
+        userLocationMap = updatedMap;
+        proximityIndexDirty = true;
+
+        const pending = loadPendingLocalChanges();
+        delete pending.locations[getLandscapeCenterKey(metaId)];
+        savePendingLocalChanges(pending);
     }
 
     // Live-map + pending-changes counterpart of relinkMetaForScopeChange.
@@ -4067,6 +4252,10 @@
                         <div id="gg-admin-scope-presets" class="gg-pill-grid">
                             ${renderScopePills(ALL_SCOPES)}
                         </div>
+                        <div id="gg-admin-landscape-import" style="display:none">
+                            <button type="button" class="gg-btn-secondary" id="gg-admin-landscape-btn">IMPORT FILE (.JSON)</button>
+                            <input type="file" id="gg-admin-landscape-file" accept=".json,application/json" style="display:none">
+                        </div>
                     </div>
                     <div class="gg-form-group">
                         <label class="gg-form-label">Tags</label>
@@ -4109,6 +4298,7 @@
                 pill.classList.toggle('gg-tag-selected', pill === target);
             });
             document.getElementById('gg-admin-meta-scope').value = target.dataset.value || '';
+            refreshLandscapeImportUi('admin');
         });
 
         adminModal.querySelector('#gg-admin-tag-presets').addEventListener('click', (e) => {
@@ -4191,6 +4381,10 @@
                     <div id="meta-scope-presets" class="gg-pill-grid">
                         ${renderScopePills(ALL_SCOPES)}
                     </div>
+                    <div id="meta-landscape-import" style="display:none">
+                        <button type="button" class="gg-btn-secondary" id="meta-landscape-btn">IMPORT FILE (.JSON)</button>
+                        <input type="file" id="meta-landscape-file" accept=".json,application/json" style="display:none">
+                    </div>
                 </div>
 
                 <div class="gg-form-group">
@@ -4248,6 +4442,7 @@
                 // Update hidden input
                 const selected = scopeContainer.querySelector('.gg-tag-selected');
                 document.getElementById('meta-scope').value = selected ? selected.dataset.value : '';
+                refreshLandscapeImportUi('create');
             }
         });
 
@@ -4277,6 +4472,8 @@
         });
 
         document.body.appendChild(modal);
+        initLandscapeImport('create');
+        initLandscapeImport('admin');
 
         // Event Listeners
         document.getElementById('gg-meta-admin-btn').addEventListener('click', async () => {
@@ -4835,6 +5032,7 @@
         setValue('gg-admin-meta-image', meta.imageUrl || '');
         setValue('gg-admin-meta-title', meta.title || '');
         setValue('gg-admin-meta-desc', meta.description || '');
+        landscapeCenterState.admin = null;
         setAdminScopeSelection(meta.scope);
         setAdminTagSelection(meta.tags);
         updateAdminImagePreview();
@@ -5079,6 +5277,7 @@
         const tags = normalizeTags(tagsStr);
         const rawImageValue = document.getElementById('meta-image').value;
         const scope = normalizeScope(document.getElementById('meta-scope').value);
+        const landscapeCenter = isLandscapeScope(scope) ? landscapeCenterState.create : null;
 
         if (!title || !desc) {
             await showToolAlert('Missing Details', 'Please fill in Title and Description.');
@@ -5138,6 +5337,7 @@
 
         try {
             applyLocalSavedMeta(newMeta, panoid);
+            if (landscapeCenter) applyLocalLandscapeCenter(newMeta.id, landscapeCenter);
             updateStatus('Saved. Syncing...');
             hideMetaModal();
             hideBackdrop();
@@ -5161,12 +5361,15 @@
                 normalizeLocationMap,
                 locations => {
                     addMetaIdsToLocationMap(locations, panoid, [newMeta.id], newMeta.scope);
+                    if (landscapeCenter) setLandscapeCenterEntry(locations, newMeta.id, landscapeCenter);
                     return locations;
                 },
                 `Link ${panoid} to ${newMeta.id} via BetterMetas`
             );
 
             updateStatus('Saved!');
+            landscapeCenterState.create = null;
+            refreshLandscapeImportUi('create');
             scheduleBackgroundDataRefresh();
             setTimeout(() => finishUi({ buttonText: META_SAVE_BUTTON_LABEL }), SAVE_COMPLETE_RESET_MS);
 
@@ -5203,6 +5406,9 @@
             return;
         }
 
+        // Captured now: reopening the details view (below) resets the pending import.
+        const landscapeCenter = isLandscapeScope(updatedMeta.scope) ? landscapeCenterState.admin : null;
+
         const source = getAdminMetaSource(existingMeta.id);
         const saveBtn = document.getElementById('gg-admin-save-btn');
         const finishUi = beginMutationUi({
@@ -5233,6 +5439,16 @@
                     applyLocalScopeRelink(panoid, savedMetaId, existingMeta.scope, updatedMeta.scope)) {
                     relinkPanoid = panoid;
                 }
+            }
+
+            // Landscape center: set/replace it for 100km/10km/1km, drop it for any other scope.
+            const hadCenterEntry = !!userLocationMap[getLandscapeCenterKey(savedMetaId)];
+            const removeCenter = source === 'user' && !landscapeCenter &&
+                !isLandscapeScope(updatedMeta.scope) && hadCenterEntry;
+            if (landscapeCenter) {
+                applyLocalLandscapeCenter(savedMetaId, landscapeCenter);
+            } else if (removeCenter) {
+                applyLocalLandscapeCenterRemoval(savedMetaId);
             }
 
             renderAdminMetas(document.getElementById('gg-admin-search')?.value || '');
@@ -5271,6 +5487,22 @@
                         `Update location of meta ${existingMeta.id} for scope ${updatedMeta.scope} via BetterMetas`
                     );
                 }
+
+                if (landscapeCenter || removeCenter) {
+                    await updateLocalJsonFileIfChanged(
+                        USER_LOCATIONS_FILE,
+                        normalizeLocationMap,
+                        locations => {
+                            if (landscapeCenter) {
+                                setLandscapeCenterEntry(locations, existingMeta.id, landscapeCenter);
+                            } else {
+                                removeLandscapeCenterEntry(locations, existingMeta.id);
+                            }
+                            return locations;
+                        },
+                        `${landscapeCenter ? 'Set' : 'Remove'} landscape center of meta ${existingMeta.id} via BetterMetas`
+                    );
+                }
             } else {
                 throw new Error(`Unknown meta source for ${existingMeta.id}`);
             }
@@ -5290,6 +5522,8 @@
         } catch (err) {
             console.error(err);
             restoreLocalDataSnapshot(snapshot);
+            landscapeCenterState.admin = landscapeCenter; // keep the import so the user can retry
+            refreshLandscapeImportUi('admin');
             await showToolAlert('Save Failed', err.message || String(err));
             updateStatus('Save Failed');
             finishUi();
