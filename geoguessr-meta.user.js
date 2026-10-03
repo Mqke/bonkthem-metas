@@ -421,6 +421,42 @@
         });
     }
 
+    // Same country test as findMatchingLocationKey, for a single entry.
+    function entryMatchesCurrentCountry(entry) {
+        const curLat = normalizeCoordinate(currentLocationData.lat);
+        const curLng = normalizeCoordinate(currentLocationData.lng);
+        const curCountry = normalizeCountry(currentLocationData.country, curLat, curLng);
+        const curNomCountry = normalizeCountry(currentLocationData.nominatimCountry, curLat, curLng);
+        const entryCountry = normalizeCountry(entry.nominatimCountry || entry.country, entry.lat, entry.lng);
+        return entryCountry === curCountry || entryCountry === curNomCountry;
+    }
+
+    // Keys of the entries that hold `metaId` and that represent the CURRENT location
+    // for a meta of `scope`: the entries of this panoid, plus (for name-based scopes)
+    // a shared entry of another panoid that fits the scope and the current country.
+    function findLinkedKeysForCurrentLocation(locations, panoid, metaId, scope) {
+        const normalizedScope = normalizeScope(scope);
+        const isNameBased = ['countrywide', 'region', 'city', 'road'].includes(normalizedScope);
+        return Object.keys(locations).filter(key => {
+            const entry = locations[key];
+            if (!getLocationMetaIds(entry).includes(metaId)) return false;
+            if (isOwnLocationKey(key, panoid)) return true;
+            return isNameBased && entry && typeof entry === 'object' && !Array.isArray(entry) &&
+                entryMatchesCurrentCountry(entry) && entryFitsScope(entry, normalizedScope);
+        });
+    }
+
+    // A meta changed scope: unlink it from the entry(ies) of its OLD scope for the
+    // current location and link it again with the NEW scope, so the location gets the
+    // fields of the new scope (region / city / road) from the current location.
+    // Returns Map(metaId -> key used), or null if the meta was not linked here.
+    function relinkMetaForScopeChange(locations, panoid, metaId, oldScope, newScope) {
+        const keys = findLinkedKeysForCurrentLocation(locations, panoid, metaId, oldScope);
+        if (keys.length === 0) return null;
+        keys.forEach(key => removeMetaIdsFromLocationMap(locations, key, [metaId]));
+        return addMetaIdsToLocationMap(locations, panoid, [metaId], newScope);
+    }
+
     function normalizeLocationMap(value) {
         if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
 
@@ -3437,6 +3473,30 @@
         refreshDisplay();
     }
 
+    // Live-map + pending-changes counterpart of relinkMetaForScopeChange.
+    // Returns false (and changes nothing) if the meta is not linked to this location.
+    function applyLocalScopeRelink(panoid, metaId, oldScope, newScope) {
+        const updatedMap = copyLocationMapForPanoid(userLocationMap, panoid);
+        const usedKeys = relinkMetaForScopeChange(updatedMap, panoid, metaId, oldScope, newScope);
+        if (!usedKeys) return false;
+
+        userLocationMap = updatedMap;
+        proximityIndexDirty = true;
+
+        const pending = loadPendingLocalChanges();
+        Object.keys(pending.locations).forEach(key => {
+            const remaining = getLocationMetaIds(pending.locations[key]).filter(id => id !== metaId);
+            if (remaining.length === 0) {
+                delete pending.locations[key];
+            } else {
+                pending.locations[key] = { ...pending.locations[key], metas: remaining };
+            }
+        });
+        addLiveLinksToPending(pending, userLocationMap, usedKeys);
+        savePendingLocalChanges(pending);
+        return true;
+    }
+
     function applyLocalLocationUnlinks(panoid, metaIds) {
         currentPanoid = panoid;
         nextPanoid = null;
@@ -5161,6 +5221,20 @@
         try {
             const savedMetaId = existingMeta.id;
             applyAdminMetaLocally(updatedMeta);
+
+            // Scope changed: the location(s) the meta is linked to here must get the
+            // fields of the new scope (region / city / road) instead of keeping the old ones.
+            let relinkPanoid = null;
+            const scopeChanged = source === 'user' &&
+                normalizeScope(existingMeta.scope) !== normalizeScope(updatedMeta.scope);
+            if (scopeChanged) {
+                const panoid = syncPanoidForUserAction('update meta scope');
+                if (panoid && panoid !== MISSING_PANOID_PLACEHOLDER &&
+                    applyLocalScopeRelink(panoid, savedMetaId, existingMeta.scope, updatedMeta.scope)) {
+                    relinkPanoid = panoid;
+                }
+            }
+
             renderAdminMetas(document.getElementById('gg-admin-search')?.value || '');
             openAdminMetaDetails(savedMetaId);
             if (currentPanoid) refreshDisplay();
@@ -5185,6 +5259,18 @@
                     },
                     `Edit meta ${existingMeta.id} via BetterMetas`
                 );
+
+                if (relinkPanoid) {
+                    await updateLocalJsonFileIfChanged(
+                        USER_LOCATIONS_FILE,
+                        normalizeLocationMap,
+                        locations => {
+                            relinkMetaForScopeChange(locations, relinkPanoid, existingMeta.id, existingMeta.scope, updatedMeta.scope);
+                            return locations;
+                        },
+                        `Update location of meta ${existingMeta.id} for scope ${updatedMeta.scope} via BetterMetas`
+                    );
+                }
             } else {
                 throw new Error(`Unknown meta source for ${existingMeta.id}`);
             }
