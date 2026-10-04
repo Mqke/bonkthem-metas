@@ -1104,7 +1104,7 @@
     let currentPanoid = null;
     let selectedMetaIds = new Set();
     let selectedAdminMetaId = null;
-    let adminSortMode = 'title';
+    let adminSortMode = 'newest';
     let activeMutationCount = 0;
     let backgroundRefreshTimer = null;
 
@@ -1448,11 +1448,53 @@
         }
     }
 
+    // ---- Image compression (applied when an image is imported) -------------------
+    const IMAGE_MAX_DIMENSION_PX = 1600;       // longest side after resize
+    const IMAGE_WEBP_QUALITY = 0.8;            // 0..1
+    const IMAGE_SKIP_COMPRESS_BELOW_BYTES = 250 * 1024; // small images in range are kept as is
+
+    function formatBytes(bytes) {
+        return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
+    }
+
+    // Resizes (longest side <= IMAGE_MAX_DIMENSION_PX) and re-encodes as WebP.
+    // Returns the original blob when compression is not possible or not smaller
+    // (GIFs are kept as is to preserve animation).
+    async function compressImageBlob(blob) {
+        if (!blob || !String(blob.type || '').startsWith('image/') || blob.type === 'image/gif') return blob;
+        let bitmap = null;
+        try {
+            bitmap = await createImageBitmap(blob);
+            const scale = Math.min(1, IMAGE_MAX_DIMENSION_PX / Math.max(bitmap.width, bitmap.height));
+            if (scale === 1 && blob.size <= IMAGE_SKIP_COMPRESS_BELOW_BYTES) return blob;
+
+            const canvas = document.createElement('canvas');
+            canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+            canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+            const ctx = canvas.getContext('2d');
+            ctx.imageSmoothingQuality = 'high';
+            ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+            const out = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', IMAGE_WEBP_QUALITY));
+            // Browsers that cannot encode WebP silently return PNG: keep the original then.
+            if (!out || out.type !== 'image/webp') return blob;
+            if (scale === 1 && out.size >= blob.size) return blob;
+            console.log(`[BetterMetas] Image compressed: ${formatBytes(blob.size)} -> ${formatBytes(out.size)} (${canvas.width}x${canvas.height})`);
+            return out;
+        } catch (err) {
+            console.warn('[BetterMetas] Image compression failed, keeping the original:', err);
+            return blob;
+        } finally {
+            if (bitmap && typeof bitmap.close === 'function') bitmap.close();
+        }
+    }
+
     // Downloads `url` and saves it to data/<countrySlug>/<name>. Returns the
     // relative path to store in the meta's imageUrl.
     async function importRemoteImage(url, countrySlug) {
-        const blob = await fetchImageBlob(url);
-        if (!blob) throw new Error('Could not download the image');
+        const originalBlob = await fetchImageBlob(url);
+        if (!originalBlob) throw new Error('Could not download the image');
+        const blob = await compressImageBlob(originalBlob);
 
         const folder = slugifyForMetaId(countrySlug) || 'unknown';
         let fileName = 'image';
@@ -1462,7 +1504,12 @@
             // Keep the default name.
         }
         fileName = fileName.replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/[. ]+$/, '') || 'image';
-        if (!/\.(png|jpe?g|webp|gif|avif)$/i.test(fileName)) fileName += IMAGE_EXT_BY_TYPE[blob.type] || '.png';
+        if (blob !== originalBlob) {
+            // Re-encoded as WebP: the file extension must follow.
+            fileName = fileName.replace(/\.(png|jpe?g|webp|gif|avif)$/i, '') + '.webp';
+        } else if (!/\.(png|jpe?g|webp|gif|avif)$/i.test(fileName)) {
+            fileName += IMAGE_EXT_BY_TYPE[blob.type] || '.png';
+        }
 
         const dot = fileName.lastIndexOf('.');
         const stem = fileName.slice(0, dot);
@@ -2902,6 +2949,12 @@
             font-size: 0.72rem;
             letter-spacing: 0.02em;
             white-space: nowrap;
+        }
+
+        .gg-hud-sort-control {
+            margin: 0 0 6px;
+            justify-content: flex-end;
+            flex: 0 0 auto;
         }
 
         .gg-admin-sort-select-wrap {
@@ -4387,12 +4440,46 @@
                 <!-- Filled by JS -->
             </div>
 
+            <div class="gg-admin-sort-control gg-hud-sort-control">
+                <label class="gg-form-label" for="gg-hud-sort-options">Sort by</label>
+                <span class="gg-admin-sort-select-wrap">
+                    <select id="gg-hud-sort-options" class="gg-form-input gg-admin-sort-select">
+                        <option value="precision">Precision</option>
+                        <option value="newest">Recently Updated</option>
+                        <option value="title">Title</option>
+                        <option value="scope">Scope</option>
+                        <option value="tags">Tags</option>
+                    </select>
+                </span>
+            </div>
+
             <div id="gg-meta-container" class="gg-meta-content">
                 <div class="gg-empty-state">Waiting for location...</div>
             </div>
             <div id="gg-status" class="gg-status-msg" title="Click to retry finding location">Waiting for location...</div>
         `;
         document.body.appendChild(hud);
+
+        // Main panel sort selector
+        const hudSortSelect = document.getElementById('gg-hud-sort-options');
+        if (hudSortSelect) {
+            hudSortSelect.value = hudSortMode;
+            resizeSortSelectToContent(hudSortSelect);
+            hudSortSelect.addEventListener('change', (e) => {
+                hudSortMode = HUD_SORT_MODES.includes(e.target.value) ? e.target.value : 'precision';
+                try {
+                    localStorage.setItem(HUD_SORT_STORAGE_KEY, hudSortMode);
+                } catch (err) {
+                    console.warn('[BetterMetas] Could not save the panel sort mode:', err);
+                }
+                resizeSortSelectToContent(hudSortSelect);
+                lastHudRenderKey = null;
+                refreshDisplay();
+            });
+            // Keep typing / key shortcuts of the page from reacting to the select.
+            hudSortSelect.addEventListener('keydown', (e) => e.stopPropagation());
+            hudSortSelect.addEventListener('keyup', (e) => e.stopPropagation());
+        }
 
         // Dragging: grab the title bar (but not its buttons) to move the HUD.
         function startHudDrag(e) {
@@ -4555,10 +4642,10 @@
                         <label class="gg-form-label" for="gg-admin-sort-options">Sort by</label>
                         <span class="gg-admin-sort-select-wrap">
                             <select id="gg-admin-sort-options" class="gg-form-input gg-admin-sort-select">
+                                <option value="newest">Recently Updated</option>
                                 <option value="title">Title</option>
                                 <option value="scope">Scope</option>
                                 <option value="tags">Tags</option>
-                                <option value="newest">Recently Updated</option>
                             </select>
                         </span>
                     </div>
@@ -4822,7 +4909,7 @@
         // Event Listeners
         document.getElementById('gg-meta-admin-btn').addEventListener('click', async () => {
             selectedAdminMetaId = null;
-            adminSortMode = 'title';
+            adminSortMode = 'newest';
             const searchInput = document.getElementById('gg-admin-search');
             searchInput.value = '';
             updateAdminSortButtons();
@@ -4926,7 +5013,7 @@
         }));
 
         document.getElementById('gg-admin-sort-options').addEventListener('change', (e) => {
-            adminSortMode = e.target.value || 'title';
+            adminSortMode = e.target.value || 'newest';
             updateAdminSortButtons();
             renderAdminMetas(document.getElementById('gg-admin-search')?.value || '');
         });
@@ -4990,6 +5077,12 @@
         if (!sortSelect) return;
 
         sortSelect.value = adminSortMode;
+        resizeSortSelectToContent(sortSelect);
+    }
+
+    // Sizes a sort <select> to the text of its selected option.
+    function resizeSortSelectToContent(sortSelect) {
+        if (!sortSelect) return;
         const selectedOption = sortSelect.selectedOptions[0];
         if (!selectedOption) return;
 
@@ -5017,30 +5110,52 @@
         return originalIndex;
     }
 
+    // Shared by the Manage Metas list and the main panel.
+    // mode: title | scope | tags | newest. Entries are { meta, index }.
+    function compareMetaEntriesByMode(mode, a, b) {
+        const metaA = a.meta;
+        const metaB = b.meta;
+        if (mode === 'scope') {
+            const scopeA = ALL_SCOPES.indexOf(normalizeScope(metaA.scope));
+            const scopeB = ALL_SCOPES.indexOf(normalizeScope(metaB.scope));
+            return (scopeA < 0 ? Number.MAX_SAFE_INTEGER : scopeA) - (scopeB < 0 ? Number.MAX_SAFE_INTEGER : scopeB)
+                || compareAdminTitle(metaA, metaB);
+        }
+        if (mode === 'tags') {
+            return compareAdminText((metaA.tags || []).join(', '), (metaB.tags || []).join(', '))
+                || compareAdminTitle(metaA, metaB);
+        }
+        if (mode === 'newest') {
+            return getAdminMetaUpdatedSortValue(metaB, b.index) - getAdminMetaUpdatedSortValue(metaA, a.index)
+                || compareAdminTitle(metaA, metaB);
+        }
+        return compareAdminTitle(metaA, metaB);
+    }
+
     function sortAdminMetaEntries(entries) {
-        const scopeOrder = new Map(ALL_SCOPES.map((scope, index) => [scope, index]));
-        return entries.sort((a, b) => {
-            const metaA = a.meta;
-            const metaB = b.meta;
-            if (adminSortMode === 'scope') {
-                const scopeA = scopeOrder.get(normalizeScope(metaA.scope)) ?? Number.MAX_SAFE_INTEGER;
-                const scopeB = scopeOrder.get(normalizeScope(metaB.scope)) ?? Number.MAX_SAFE_INTEGER;
-                return scopeA - scopeB
-                    || compareAdminTitle(metaA, metaB);
-            }
+        return entries.sort((a, b) => compareMetaEntriesByMode(adminSortMode, a, b));
+    }
 
-            if (adminSortMode === 'tags') {
-                return compareAdminText((metaA.tags || []).join(', '), (metaB.tags || []).join(', '))
-                    || compareAdminTitle(metaA, metaB);
-            }
+    // ---- Main panel sort ----------------------------------------------------------
+    // 'precision' keeps the historical order (most precise scope first); the other
+    // modes are the same as the Manage Metas list.
+    const HUD_SORT_STORAGE_KEY = 'gg_hud_sort_mode';
+    const HUD_SORT_MODES = ['precision', 'newest', 'title', 'scope', 'tags'];
+    let hudSortMode = (() => {
+        try {
+            const saved = localStorage.getItem(HUD_SORT_STORAGE_KEY);
+            return HUD_SORT_MODES.includes(saved) ? saved : 'precision';
+        } catch (err) {
+            return 'precision';
+        }
+    })();
 
-            if (adminSortMode === 'newest') {
-                return getAdminMetaUpdatedSortValue(metaB, b.index) - getAdminMetaUpdatedSortValue(metaA, a.index)
-                    || compareAdminTitle(metaA, metaB);
-            }
-
-            return compareAdminTitle(metaA, metaB);
-        });
+    function sortMetasForHud(metas) {
+        if (hudSortMode === 'precision') return sortLinkedMetasByPrecision(metas);
+        return metas
+            .map((meta, index) => ({ meta, index }))
+            .sort((a, b) => compareMetaEntriesByMode(hudSortMode, a, b))
+            .map(({ meta }) => meta);
     }
 
     function getMetaSearchTerms(searchTerm) {
@@ -6086,17 +6201,17 @@
         // predicted metas. A linked meta whose scope/tags no longer match the
         // active filter (e.g. edited from countrywide to region) should
         // disappear just like it would if it had never been linked.
-        const exactMetas = sortLinkedMetasByPrecision(metaIds.map(id => {
+        const exactMetas = sortMetasForHud(metaIds.map(id => {
             const found = getMetaById(id);
             if (!found) console.warn('[BetterMetas] Could not find exact meta data for ID:', id);
             return found;
         }).filter(Boolean).filter(isScopeActive).filter(isTagActive));
 
         // Get predicted/nearby metas
-        const predictedMetas = evaluateProximityMetas()
+        const predictedMetas = sortMetasForHud(evaluateProximityMetas()
             .filter(pm => !metaIds.includes(pm.id))
             .filter(isScopeActive)
-            .filter(isTagActive);
+            .filter(isTagActive));
 
         debugLog(`[BetterMetas] Found ${exactMetas.length} exact and ${predictedMetas.length} predicted metas (Filtered).`);
 
