@@ -180,6 +180,129 @@
         return snapshot;
     }
 
+    // ---- Road name selection -------------------------------------------------------
+    // Each geocoder source gives { names: [...], refs: [...] }. A "ref" (E20, N7, SP 12)
+    // identifies a whole highway, not a precise stretch, so it is only a last resort.
+    // A value is a ref when a source says so (OSM ref / int_ref tag, Google short_name
+    // different from long_name) or, failing that, when it looks like a bare road code.
+    function newRoadSources() {
+        return { google: { names: [], refs: [] }, nominatim: { names: [], refs: [] } };
+    }
+
+    function normalizeRoadKey(value) {
+        return stripDiacritics(String(value || '')).toLowerCase().replace(/\s+/g, ' ').trim();
+    }
+
+    function getKnownRoadRefs(roadSources) {
+        const known = new Set();
+        ['google', 'nominatim'].forEach(src => {
+            ((roadSources && roadSources[src] && roadSources[src].refs) || []).forEach(r => {
+                const k = normalizeRoadKey(r);
+                if (k) known.add(k);
+            });
+        });
+        return known;
+    }
+
+    function isRoadRefLike(name, knownRefs) {
+        const k = normalizeRoadKey(name);
+        if (!k) return false;
+        if (knownRefs && knownRefs.has(k)) return true;
+        return /^[a-z]{0,3}[\s-]?\d{1,4}[a-z]?$/.test(k);
+    }
+
+    function pickRoadName(source, knownRefs) {
+        const names = ((source && source.names) || []).map(n => String(n || '').trim()).filter(Boolean);
+        return names.find(n => !isRoadRefLike(n, knownRefs)) || null;
+    }
+
+    // One road per location. A real name beats a ref; when both sources have a real name,
+    // Google's is kept (it is the label shown on Google Maps). A ref is used only if
+    // neither source has a real name.
+    function chooseRoad(roadSources) {
+        const known = getKnownRoadRefs(roadSources);
+        const g = pickRoadName(roadSources && roadSources.google, known);
+        if (g) return g;
+        const n = pickRoadName(roadSources && roadSources.nominatim, known);
+        if (n) return n;
+        for (const src of ['google', 'nominatim']) {
+            const source = (roadSources && roadSources[src]) || {};
+            const any = (source.refs || [])[0] || (source.names || [])[0];
+            if (any) return String(any).trim();
+        }
+        return null;
+    }
+
+    // Region / city: one raw value per source. Nominatim has priority (its language is
+    // fixed to English, so a place always gets the same name), Google is the fallback.
+    function newPlaceSources() {
+        return { google: { region: null, city: null }, nominatim: { region: null, city: null } };
+    }
+
+    function applyPlaceNames() {
+        const src = currentLocationData.placeSources || newPlaceSources();
+        currentLocationData.region = src.nominatim.region || src.google.region || null;
+        currentLocationData.city = src.nominatim.city || src.google.city || null;
+    }
+
+    // Google route component: short_name differing from long_name is the road code (E20).
+    function addGoogleRouteComponent(target, comp) {
+        const long = String(comp.long_name || '').trim();
+        const short = String(comp.short_name || '').trim();
+        if (long) target.names.push(long);
+        if (short && short !== long) target.refs.push(short);
+    }
+
+    // Region / city come from Nominatim first, so wait for it (or for both sources).
+    async function waitForPlaceGeocoding(timeoutMs = 10000) {
+        const deadline = Date.now() + timeoutMs;
+        let announced = false;
+        while (true) {
+            const done = currentLocationData.geocodeDone || {};
+            if (done.nominatim) return true;
+            if (Date.now() >= deadline) return false;
+            if (!announced) {
+                announced = true;
+                updateStatus('Waiting for location geocoding...');
+            }
+            await new Promise(resolve => setTimeout(resolve, 150));
+        }
+    }
+
+    // Waits for the geocoding the given scope depends on (road / region / city).
+    async function waitForScopeGeocoding(scope) {
+        const normalized = normalizeScope(scope);
+        if (normalized === 'road') return waitForRoadGeocoding();
+        if (normalized === 'region' || normalized === 'city') return waitForPlaceGeocoding();
+        return true;
+    }
+
+    function markGeocodeDone(source, latStr, lngStr) {
+        if (currentLocationData.lat !== latStr || currentLocationData.lng !== lngStr) return;
+        currentLocationData.geocodeDone = currentLocationData.geocodeDone || { google: false, nominatim: false };
+        currentLocationData.geocodeDone[source] = true;
+    }
+
+    // Waits (up to timeoutMs) until the road of the current location is final: both
+    // geocoders answered, or Google already gave a real name (it wins anyway).
+    // Returns true when final, false on timeout (the link then uses what is known).
+    async function waitForRoadGeocoding(timeoutMs = 10000) {
+        const deadline = Date.now() + timeoutMs;
+        let announced = false;
+        while (true) {
+            const done = currentLocationData.geocodeDone || {};
+            const sources = currentLocationData.roadSources;
+            const googleHasName = !!pickRoadName(sources && sources.google, getKnownRoadRefs(sources));
+            if ((done.google && done.nominatim) || (done.google && googleHasName)) return true;
+            if (Date.now() >= deadline) return false;
+            if (!announced) {
+                announced = true;
+                updateStatus('Waiting for road geocoding...');
+            }
+            await new Promise(resolve => setTimeout(resolve, 150));
+        }
+    }
+
     function getNormalizedRoadNames(value) {
         const values = Array.isArray(value) ? value : [value];
         return values
@@ -1020,6 +1143,9 @@
         region: null,
         city: null,
         road: null,
+        roadSources: newRoadSources(),
+        placeSources: newPlaceSources(),
+        geocodeDone: { google: false, nominatim: false },
         lat: null,
         lng: null
     };
@@ -5169,6 +5295,8 @@
         });
         if (!finishUi) return;
 
+        if (!isLinked) await waitForScopeGeocoding(newScope || existingMeta?.scope);
+
         const snapshot = createLocalDataSnapshot();
 
         try {
@@ -5329,6 +5457,10 @@
             statusText: `Linking ${metaIds.length} metas...`
         });
         if (!finishUi) return;
+
+        for (const scopeToWait of new Set(metaIds.map(id => normalizeScope(getMetaById(id)?.scope)))) {
+            await waitForScopeGeocoding(scopeToWait);
+        }
 
         const snapshot = createLocalDataSnapshot();
         let linkedSuccessfully = false;
@@ -5512,6 +5644,7 @@
         // An image import needs the country (folder name); wait for geocoding.
         const needsImageImport = rawImageValue.trim() && !isLocalImagePath(rawImageValue);
         const detectedCountryFolder = needsImageImport ? await waitForDetectedCountryFolder() : null;
+        await waitForScopeGeocoding(scope);
 
         // Generate unique meta ID
         const metaId = generateMetaId();
@@ -5638,6 +5771,10 @@
             statusText: `Saving meta ${existingMeta.id}...`
         });
         if (!finishUi) return;
+
+        if (source === 'user' && normalizeScope(updatedMeta.scope) !== normalizeScope(existingMeta.scope)) {
+            await waitForScopeGeocoding(updatedMeta.scope);
+        }
 
         const snapshot = createLocalDataSnapshot();
         const previousImagePath = String(existingMeta.imageUrl || '').trim();
@@ -6377,6 +6514,9 @@
                             region: null,
                             city: null,
                             road: null,
+                            roadSources: newRoadSources(),
+                            placeSources: newPlaceSources(),
+                            geocodeDone: { google: false, nominatim: false },
                             lat: newLatStr,
                             lng: newLngStr
                         };
@@ -6397,6 +6537,7 @@
                     }
                     recentlyGeocodedLocations.add(geocodeKey);
                     setTimeout(() => recentlyGeocodedLocations.delete(geocodeKey), 10000);
+                    currentLocationData.geocodeDone = { google: false, nominatim: false };
 
                     // 1. Google Geocoding (Dominant for country)
                     sharedGeocoder ||= new win.google.maps.Geocoder();
@@ -6408,7 +6549,7 @@
                             let gCountry = null;
                             let gRegion = null;
                             let gCity = null;
-                            let gRoad = null;
+                            const gRoadSource = { names: [], refs: [] };
 
                             addrComp.forEach(comp => {
                                 if (comp.types.includes("country")) gCountry = comp.long_name;
@@ -6416,7 +6557,14 @@
                                 if (comp.types.includes("locality") || comp.types.includes("administrative_area_level_2")) {
                                     if (!gCity) gCity = comp.long_name; // Prefer locality
                                 }
-                                if (comp.types.includes("route")) gRoad = comp.long_name;
+                                if (comp.types.includes("route")) addGoogleRouteComponent(gRoadSource, comp);
+                            });
+                            // Other results can expose the same road under another name/ref
+                            results.slice(1, 5).forEach(r => {
+                                if (!r.types || !r.types.includes('route')) return;
+                                (r.address_components || []).forEach(comp => {
+                                    if (comp.types.includes('route')) addGoogleRouteComponent(gRoadSource, comp);
+                                });
                             });
 
                             if (currentLocationData.lat === newLatStr && currentLocationData.lng === newLngStr) {
@@ -6426,9 +6574,14 @@
                                     currentLocationData.country = normalizeCountry(gCountry, lat, lng);
                                 }
 
-                                if (gRegion && !currentLocationData.region) currentLocationData.region = gRegion;
-                                if (gCity && !currentLocationData.city) currentLocationData.city = gCity;
-                                if (gRoad && !currentLocationData.road) currentLocationData.road = gRoad;
+                                currentLocationData.placeSources = currentLocationData.placeSources || newPlaceSources();
+                                currentLocationData.placeSources.google = { region: gRegion, city: gCity };
+                                applyPlaceNames();
+                                if (gRoadSource.names.length || gRoadSource.refs.length) {
+                                    currentLocationData.roadSources = currentLocationData.roadSources || newRoadSources();
+                                    currentLocationData.roadSources.google = gRoadSource;
+                                    currentLocationData.road = chooseRoad(currentLocationData.roadSources);
+                                }
 
                                 updateLocationUI();
                                 if (currentPanoid) checkLocation(currentPanoid);
@@ -6436,10 +6589,11 @@
                         } else {
                             console.warn('[BetterMetas] Google geocode failed:', status);
                         }
+                        markGeocodeDone('google', newLatStr, newLngStr);
                     });
 
                     // 2. Nominatim Geocoding (Detail/Fallback)
-                    const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latVal}&lon=${lngVal}&accept-language=en`;
+                    const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latVal}&lon=${lngVal}&accept-language=en&extratags=1&namedetails=1`;
                     if (activeNominatimController && activeNominatimKey !== geocodeKey) {
                         activeNominatimController.abort();
                     }
@@ -6460,16 +6614,18 @@
                             let region = a.state || a.region || a.province || a.county || a.district || null;
                             let city = a.city || a.town || a.village || a.hamlet || a.municipality || null;
 
-                            // Road Logic
-                            let road = null;
-                            const roadName = a.road || a.pedestrian || a.highway || a.street || a.suburb || a.hamlet || a.village || null;
-                            if (roadName) {
-                                if (roadName.includes(';')) {
-                                    road = roadName.split(';').map(s => s.trim());
-                                } else {
-                                    road = roadName;
-                                }
+                            // Road Logic: names and refs of the road (no suburb/hamlet/village,
+                            // which are places, not roads). OSM "ref" tags are real refs.
+                            const nRoadSource = { names: [], refs: [] };
+                            const splitTag = v => String(v || '').split(';').map(x => x.trim()).filter(Boolean);
+                            [a.road, a.pedestrian, a.highway, a.street].forEach(v => nRoadSource.names.push(...splitTag(v)));
+                            if (data.class === 'highway' || data.category === 'highway') {
+                                const nd = data.namedetails || {};
+                                const ex = data.extratags || {};
+                                [nd.name, nd.official_name, nd.alt_name].forEach(v => nRoadSource.names.push(...splitTag(v)));
+                                [nd.ref, ex.ref, ex.int_ref].forEach(v => nRoadSource.refs.push(...splitTag(v)));
                             }
+                            let road = chooseRoad({ google: { names: [], refs: [] }, nominatim: nRoadSource });
 
                             // Fallback: If still no road, use shortDescription if it looks like a road
                             if (!road && loc.shortDescription && loc.shortDescription !== loc.description && loc.shortDescription !== realNomCountry) {
@@ -6488,9 +6644,15 @@
                                     currentLocationData.country = realNomCountry;
                                 }
 
-                                if (region && !currentLocationData.region) currentLocationData.region = region;
-                                if (city && !currentLocationData.city) currentLocationData.city = city;
-                                if (road && !currentLocationData.road) currentLocationData.road = road;
+                                currentLocationData.placeSources = currentLocationData.placeSources || newPlaceSources();
+                                currentLocationData.placeSources.nominatim = { region, city };
+                                applyPlaceNames();
+                                if (road) {
+                                    if (!nRoadSource.names.length && !nRoadSource.refs.length) nRoadSource.names.push(road);
+                                    currentLocationData.roadSources = currentLocationData.roadSources || newRoadSources();
+                                    currentLocationData.roadSources.nominatim = nRoadSource;
+                                    currentLocationData.road = chooseRoad(currentLocationData.roadSources);
+                                }
                             }
 
                             updateLocationUI();
@@ -6503,6 +6665,7 @@
                         }
                     })
                     .finally(() => {
+                        markGeocodeDone('nominatim', newLatStr, newLngStr);
                         if (activeNominatimController === nominatimController) {
                             activeNominatimController = null;
                             activeNominatimKey = null;
