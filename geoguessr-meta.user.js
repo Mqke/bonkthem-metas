@@ -1451,22 +1451,26 @@
     // ---- Image compression (applied when an image is imported) -------------------
     const IMAGE_MAX_DIMENSION_PX = 1600;       // longest side after resize
     const IMAGE_WEBP_QUALITY = 0.8;            // 0..1
-    const IMAGE_SKIP_COMPRESS_BELOW_BYTES = 250 * 1024; // small images in range are kept as is
+    const IMAGE_SKIP_REENCODE_WEBP_BELOW_BYTES = 250 * 1024; // already-WebP images this small are kept as is
 
     function formatBytes(bytes) {
         return bytes >= 1048576 ? `${(bytes / 1048576).toFixed(1)} MB` : `${Math.round(bytes / 1024)} KB`;
     }
 
-    // Resizes (longest side <= IMAGE_MAX_DIMENSION_PX) and re-encodes as WebP.
-    // Returns the original blob when compression is not possible or not smaller
-    // (GIFs are kept as is to preserve animation).
+    // Converts any imported image (png, jpg, gif, avif...) to WebP, with the longest side
+    // limited to IMAGE_MAX_DIMENSION_PX. Notes:
+    //  - an animated GIF becomes a still WebP (first frame);
+    //  - an image that is already a small WebP is kept as is;
+    //  - if the conversion is impossible (browser cannot encode WebP, decoding error),
+    //    the original blob is returned unchanged.
     async function compressImageBlob(blob) {
-        if (!blob || !String(blob.type || '').startsWith('image/') || blob.type === 'image/gif') return blob;
+        if (!blob || !String(blob.type || '').startsWith('image/')) return blob;
+        const isWebp = blob.type === 'image/webp';
         let bitmap = null;
         try {
             bitmap = await createImageBitmap(blob);
             const scale = Math.min(1, IMAGE_MAX_DIMENSION_PX / Math.max(bitmap.width, bitmap.height));
-            if (scale === 1 && blob.size <= IMAGE_SKIP_COMPRESS_BELOW_BYTES) return blob;
+            if (isWebp && scale === 1 && blob.size <= IMAGE_SKIP_REENCODE_WEBP_BELOW_BYTES) return blob;
 
             const canvas = document.createElement('canvas');
             canvas.width = Math.max(1, Math.round(bitmap.width * scale));
@@ -1478,7 +1482,8 @@
             const out = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', IMAGE_WEBP_QUALITY));
             // Browsers that cannot encode WebP silently return PNG: keep the original then.
             if (!out || out.type !== 'image/webp') return blob;
-            if (scale === 1 && out.size >= blob.size) return blob;
+            // Re-encoding a WebP only makes sense if it gets smaller.
+            if (isWebp && scale === 1 && out.size >= blob.size) return blob;
             console.log(`[BetterMetas] Image compressed: ${formatBytes(blob.size)} -> ${formatBytes(out.size)} (${canvas.width}x${canvas.height})`);
             return out;
         } catch (err) {

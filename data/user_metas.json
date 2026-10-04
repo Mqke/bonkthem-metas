@@ -59487,235 +59487,237 @@
     "id": "ecuador_1789901459164_t7bxy",
     "title": "Ecuador - License Plates",
     "description": "The standard licence plates are white and can be short or long. In street view, you will often see a mix of both sizes.\nCommercial vehicles, such as taxis or buses, can have older solid orange plates, or newer ones with an orange bar at the top.\n\n*Ecuador is the only country in Latin America to use a mix of short and long licence plates.*",
-    "imageUrl": "data/ecuador/Ecuador_License_Plate.png",
+    "imageUrl": "data/ecuador/Ecuador_License_Plate.webp",
     "scope": "countrywide",
     "tags": [
       "plates",
       "cars"
     ],
-    "updatedAt": "2026-10-02T16:52:52.517Z"
+    "updatedAt": "2026-10-04T13:02:29.749Z"
   },
   {
     "id": "ecuador_1789901459166_r81w7",
     "title": "Ecuador - Gen4 Coverage",
     "description": "All Gen4 coverage was captured using a white pickup truck with a black trunk and no antenna.\n\n*The pickup truck in Panama and Costa Rica has an antenna on the front.*",
-    "imageUrl": "data/ecuador/Screenshot__281151_29.png",
+    "imageUrl": "data/ecuador/Screenshot__281151_29.webp",
     "scope": "countrywide",
     "tags": [
       "cars",
       "camera"
     ],
-    "updatedAt": "2026-10-03T13:42:13.590Z"
+    "updatedAt": "2026-10-04T13:04:23.889Z"
   },
   {
     "id": "ecuador_1789901459167_uciqr",
     "title": "Ecuador - Shitcam",
     "description": "Google used a weird, low-quality camera in Ecuador.\nThis camera is known as the official Ari (or \u201cShitcam\u201d).\nIt has a wide circular car blur and often somewhat brownish colours.\nYou will sometimes see a unique red logo at the front of the car.\n\n*Within Latin America, Ecuador is the only country that has shitcam coverage.*",
-    "imageUrl": "data/ecuador/ecua_shitcam_with_logo.png",
+    "imageUrl": "data/ecuador/ecua_shitcam_with_logo.webp",
     "scope": "countrywide",
     "tags": [
       "camera"
     ],
-    "updatedAt": "2026-10-03T13:42:26.103Z"
+    "updatedAt": "2026-10-04T13:04:48.305Z"
   },
   {
     "id": "ecuador_1789901459168_2n7dl",
     "title": "Ecuador - Bollards",
     "description": "Ecuador is one of the few Latin American countries where bollards are very common.\nYou will find two main types of bollards:\n- A round bollard with two red stripes,\n- A flat bollard with two red reflectors on black.\n\nMany other bollards can be found, however, they will almost always have the same colour scheme and style.\n\n*A similar rectangular bollard can sometimes be found in Malaysia.*",
-    "imageUrl": "data/ecuador/Bollards-EC.png",
+    "imageUrl": "data/ecuador/Bollards-EC.webp",
     "scope": "countrywide",
     "tags": [
       "bollards"
     ],
-    "updatedAt": "2026-10-03T13:42:44.737Z"
+    "updatedAt": "2026-10-04T13:04:57.904Z"
   },
   {
     "id": "ecuador_1789901459171_00h88",
     "title": "Ecuador - Double Guardrails",
     "description": "**Double guardrails** are very commonly used.\nThis is much less common in other South American countries.",
-    "imageUrl": "data/ecuador/Double_guardrails.png",
+    "imageUrl": "data/ecuador/Double_guardrails.webp",
     "scope": "countrywide",
     "tags": [
       "structures",
       "road"
     ],
-    "updatedAt": "2026-10-03T13:45:27.999Z"
+    "updatedAt": "2026-10-04T13:05:46.697Z"
   },
   {
     "id": "ecuador_1789901459172_ux3mv",
     "title": "Ecuador - Chevron Spam",
     "description": "Ecuador often uses a lot of chevrons in road curves (\u201cchevron spam\u201d), usually considerably more than most other Latin American countries.\n\n*Colombia also occasionally uses a lot of chevrons in curves.*",
-    "imageUrl": "data/ecuador/Chevron_spam2.png",
+    "imageUrl": "data/ecuador/Chevron_spam2.webp",
     "scope": "countrywide",
     "tags": [
       "signs",
       "structures",
       "road"
     ],
-    "updatedAt": "2026-10-03T13:45:40.801Z"
+    "updatedAt": "2026-10-04T13:05:59.699Z"
   },
   {
     "id": "ecuador_1789901459173_mwcny",
     "title": "Ecuador - Road Signs",
     "description": "Ecuador uses a lot of **square road signs with a white background**, of the design shown in the image.",
-    "imageUrl": "data/ecuador/Square_signs.png",
+    "imageUrl": "data/ecuador/Square_signs.webp",
     "scope": "countrywide",
     "tags": [
       "signs",
       "road"
     ],
-    "updatedAt": "2026-10-03T13:45:52.866Z"
+    "updatedAt": "2026-10-04T13:06:11.978Z"
   },
   {
     "id": "ecuador_1789901459174_0iwd3",
     "title": "Ecuador - Kilometre Markers",
     "description": "Kilometre markers are green and have the distinctive Ecuadorian **highway shields** on them.",
-    "imageUrl": "data/ecuador/KM_marker.png",
+    "imageUrl": "data/ecuador/KM_marker.webp",
     "scope": "countrywide",
     "tags": [
       "signs",
       "road"
     ],
-    "updatedAt": "2026-10-03T13:46:00.954Z"
+    "updatedAt": "2026-10-04T13:06:23.285Z"
   },
   {
     "id": "ecuador_1789901459175_t6i1n",
     "title": "Ecuador - Sign Backs",
     "description": "Sometimes, the back of the signs are painted a teal blue colour.\nThe signposts are thin and made of metal.\n\n*Ecuador is the only country in Latin America to use teal blue sign backs.*",
-    "imageUrl": "data/ecuador/Teal_sign_back.png",
+    "imageUrl": "data/ecuador/Teal_sign_back.webp",
     "scope": "countrywide",
     "tags": [
       "signs"
     ],
-    "updatedAt": "2026-10-03T13:46:16.449Z"
+    "updatedAt": "2026-10-04T13:06:33.062Z"
   },
   {
     "id": "ecuador_1789901459176_828zm",
     "title": "Ecuador - Way Signs",
     "description": "Ecuador uses these signs to indicate one or two-way streets. \n\n*The Dominican Republic and Puerto Rico are the only two other Latin American countries to use similar signs with text inside the arrow.*",
-    "imageUrl": "data/ecuador/ecuador_one_way.png",
+    "imageUrl": "data/ecuador/ecuador_one_way.webp",
     "scope": "countrywide",
     "tags": [
       "signs"
     ],
-    "updatedAt": "2026-10-03T13:46:31.231Z"
+    "updatedAt": "2026-10-04T13:06:42.979Z"
   },
   {
     "id": "ecuador_1789901459177_nu5pm",
     "title": "Ecuador - Houses",
     "description": "Most houses are made of grey bricks and have metal roofs.\n\n*This is not unique to Ecuador, but is very common. Countries such as Peru, and especially Bolivia, commonly use red bricks.*",
-    "imageUrl": "data/ecuador/round__281_29.png",
+    "imageUrl": "data/ecuador/round__281_29.webp",
     "scope": "countrywide",
     "tags": [
       "architecture"
     ],
-    "updatedAt": "2026-10-03T13:46:43.445Z"
+    "updatedAt": "2026-10-04T13:06:53.571Z"
   },
   {
     "id": "ecuador_1789901459178_7h3b4",
     "title": "Ecuador - Hexagonal Pavement",
     "description": "In urban areas, you can sometimes find this pavement consisting of **hexagonal tiles**.",
-    "imageUrl": "data/ecuador/Hexagonal_tiles.png",
+    "imageUrl": "data/ecuador/Hexagonal_tiles.webp",
     "scope": "countrywide",
     "tags": [
       "architecture"
     ],
-    "updatedAt": "2026-10-03T13:46:56.429Z"
+    "updatedAt": "2026-10-04T13:07:07.295Z"
   },
   {
     "id": "ecuador_1789901459183_pdb8b",
     "title": "Ecuador - Banana Plants",
     "description": "**Banana plants**, and especially plantations, are most commonly found in the southwestern part of the country.",
-    "imageUrl": "data/ecuador/banana-plants-EC.png",
+    "imageUrl": "data/ecuador/banana-plants-EC.webp",
     "scope": "100km",
     "tags": [
       "plants"
     ],
-    "updatedAt": "2026-10-03T14:12:43.913Z"
+    "updatedAt": "2026-10-04T12:53:10.713Z"
   },
   {
     "id": "ecuador_1789901459184_qyetn",
     "title": "Ecuador - Dry Coastal Landscape",
     "description": "This **extremely dry landscape** is only found in the coastal region between Guayaquil and Manta.",
-    "imageUrl": "data/ecuador/ec_dry.png",
+    "imageUrl": "data/ecuador/ec_dry.webp",
     "scope": "10km",
-    "tags": [],
-    "updatedAt": "2026-10-03T14:17:47.734Z"
+    "tags": [
+      "landscape"
+    ],
+    "updatedAt": "2026-10-04T13:11:34.750Z"
   },
   {
     "id": "ecuador_1789901459185_zg6h1",
     "title": "Ecuador - Flat Landscape",
     "description": "The **flattest region** is located around the city of Guayaquil.\nThis is most easily seen on the **E-25** and **E-48**.",
-    "imageUrl": "data/ecuador/Flat-EC.png",
+    "imageUrl": "data/ecuador/Flat-EC.webp",
     "scope": "100km",
     "tags": [
       "landscape"
     ],
-    "updatedAt": "2026-10-03T13:58:22.476Z"
+    "updatedAt": "2026-10-04T13:10:58.680Z"
   },
   {
     "id": "ecuador_1789901459188_7tht8",
     "title": "Ecuador - Brownish Red Dirt",
     "description": "The southern regions have many winding **mountain roads** and **exposed brownish red dirt**.\nThe central provinces can have similar roads, but the exposed dirt will usually not be found in these areas.",
-    "imageUrl": "data/ecuador/ec_southernregion.png",
+    "imageUrl": "data/ecuador/ec_southernregion.webp",
     "scope": "100km",
     "tags": [
       "soil"
     ],
-    "updatedAt": "2026-10-03T15:11:17.267Z"
+    "updatedAt": "2026-10-04T13:12:14.328Z"
   },
   {
     "id": "ecuador_1789901459189_1bw85",
     "title": "Ecuador - Chimborazo Landscape",
     "description": "The province of Chimborazo is **semi-arid**, and has an **abundance of pine trees**.",
-    "imageUrl": "data/ecuador/ec_chimborazo.png",
+    "imageUrl": "data/ecuador/ec_chimborazo.webp",
     "scope": "region",
     "tags": [
       "plants",
       "landscape"
     ],
-    "updatedAt": "2026-10-03T16:40:19.526Z"
+    "updatedAt": "2026-10-04T13:09:49.972Z"
   },
   {
     "id": "ecuador_1789901459192_mcr0p",
     "title": "Ecuador - Guayas Guardrails",
     "description": "Guardrails are often **painted black-and-yellow**, as opposed to the generic silver or solid yellow versions.",
-    "imageUrl": "data/ecuador/guayas_guardrail.png",
+    "imageUrl": "data/ecuador/guayas_guardrail.webp",
     "scope": "region",
     "tags": [
       "structures",
       "road"
     ],
-    "updatedAt": "2026-10-03T16:44:39.639Z"
+    "updatedAt": "2026-10-04T13:13:20.418Z"
   },
   {
     "id": "ecuador_1789901459193_0gb32",
     "title": "Ecuador - E-40 Highway",
     "description": "The **E-40 between Salinas and Guayaquil** is one of the only **divided highways**, and the only one in the **dry area** near the southwestern coast.",
-    "imageUrl": "data/ecuador/ec_e40.png",
+    "imageUrl": "data/ecuador/ec_e40.webp",
     "scope": "road",
     "tags": [
       "road"
     ],
-    "updatedAt": "2026-10-03T15:45:23.964Z"
+    "updatedAt": "2026-10-04T13:21:16.296Z"
   },
   {
     "id": "ecuador_1789901459194_b9gjv",
     "title": "Ecuador - Roadside Pipes",
     "description": "In the northeast of Ecuador you can find **metal pipes along some of the roads**",
-    "imageUrl": "data/ecuador/ThickGreyPipe.png",
+    "imageUrl": "data/ecuador/ThickGreyPipe.webp",
     "scope": "region",
     "tags": [
       "structures",
       "road"
     ],
-    "updatedAt": "2026-10-03T15:33:43.292Z"
+    "updatedAt": "2026-10-04T13:13:51.846Z"
   },
   {
     "id": "ecuador_1789901459195_36lqm",
     "title": "Ecuador - Galapagos Islands",
     "description": "The Galapagos Islands are an archipelago located west of mainland Ecuador. There are only trekkers and boat coverage on and around the islands. There is a wide variety of landscapes, including volcanic soil, low shrubbery, and craters (with Galapagos turtles onlooking).",
-    "imageUrl": "data/ecuador/Galapagos-EC.png",
+    "imageUrl": "data/ecuador/Galapagos-EC.webp",
     "scope": "region",
     "tags": [
       "plants",
@@ -59723,19 +59725,19 @@
       "soil",
       "camera"
     ],
-    "updatedAt": "2026-10-04T12:28:47.279Z"
+    "updatedAt": "2026-10-04T13:10:45.346Z"
   },
   {
     "id": "ecuador_1789901459196_0rkuj",
     "title": "Ecuador - Gen3 Coverage",
     "description": "All **Gen3 coverage** is made with a **white car, with a short and thick antenna** (\u201cstubby antenna\u201d).\nThe antenna and or car are not always visible.\n\n**This antenna on a black car** can only be found in **Colombia**, which can help with tough 50-50s with **Ecuador**.\nNote that Colombia can also simply have a white car.\n\n*Mexico, Brazil and Colombia can also have this same short antenna.*",
-    "imageUrl": "data/ecuador/ec_antenna.png",
+    "imageUrl": "data/ecuador/ec_antenna.webp",
     "scope": "countrywide",
     "tags": [
       "cars",
       "camera"
     ],
-    "updatedAt": "2026-10-03T13:40:53.251Z"
+    "updatedAt": "2026-10-04T13:04:08.219Z"
   },
   {
     "id": "falkland-islands_1789901459197_t6ye7",
@@ -60907,362 +60909,362 @@
     "id": "ecuador_1790077965792_z5126",
     "title": "Ecuador - Poles",
     "description": "Most poles in Ecuador are round and made of concrete.\nThese poles are fairly generic and not all that useful to identify the country.\n\nHowever, sometimes you will see another, more useful type of concrete pole: the ladder pole.\nIt has a lot of small indents \u2013 resembling the steps of a ladder.\nWithin Latin America, these poles are more or less unique to Ecuador.\n\n*Brazilian waffle poles also have indents, but only a couple \u2013 as opposed to the large amount of indents that Ecuadorian ladder poles have.*",
-    "imageUrl": "data/ecuador/Ecua_poles.png",
+    "imageUrl": "data/ecuador/Ecua_poles.webp",
     "scope": "countrywide",
     "tags": [
       "poles"
     ],
-    "updatedAt": "2026-10-03T13:44:56.381Z"
+    "updatedAt": "2026-10-04T13:05:18.094Z"
   },
   {
     "id": "ecuador_1790078090806_p5oqr",
     "title": "Ecuador - Roads",
     "description": "Concrete roads are relatively common in Ecuador.",
-    "imageUrl": "data/ecuador/Concrete_roads.png",
+    "imageUrl": "data/ecuador/Concrete_roads.webp",
     "scope": "countrywide",
     "tags": [
       "road"
     ],
-    "updatedAt": "2026-10-03T13:45:18.155Z"
+    "updatedAt": "2026-10-04T13:05:28.618Z"
   },
   {
     "id": "ecuador_1790162832778_bjoys",
     "title": "Ecuador - Antennas",
     "description": "The Google car antenna has two distinct variations:\n- The \u201chigh\u201d antenna (purple), where the wire around the antenna is entirely above the halfway line of the antenna.\n- The \u201clow\u201d antenna (blue) where the majority of the wire is below the halfway point of the line, and there can be a small bit poking up at the very top.\n\nThis is most useful when you have the high antenna, since it will always be in the northern half of the country.",
-    "imageUrl": "https://www.plonkit.net/images/resize/600/80/ecuador/Antenna-EC.png",
+    "imageUrl": "data/ecuador/Antenna-EC.webp",
     "scope": "countrywide",
     "tags": [
       "antenna"
     ],
-    "updatedAt": "2026-09-23T11:35:20.851Z"
+    "updatedAt": "2026-10-04T13:02:57.567Z"
   },
   {
     "id": "ecuador_1791039150482_439y5",
     "title": "Ecuador - Volcanic Soil",
     "description": "**Volcanic soil** is mainly found between the Andes mountains",
-    "imageUrl": "data/ecuador/Zvzv5wnDY0xlDDwAAAAASUVORK5CYII.png",
+    "imageUrl": "data/ecuador/Zvzv5wnDY0xlDDwAAAAASUVORK5CYII.webp",
     "scope": "10km",
     "tags": [
       "soil"
     ],
-    "updatedAt": "2026-10-03T14:55:34.996Z"
+    "updatedAt": "2026-10-04T13:20:59.462Z"
   },
   {
     "id": "ecuador_1791039414862_hnqa0",
     "title": "Ecuador - Amazon Landscape",
     "description": "The **Amazon area** is very distinct.\nIt is **fairly flat**, and contains many of these trees with white bark (Cordia trichotoma), and oil palms.\n\n*The vast majority of the coverage notably uses the rarer \u201chigh antenna\u201d.*",
-    "imageUrl": "data/ecuador/AmwnA70UHLIgAAAAAElFTkSuQmCC.png",
+    "imageUrl": "data/ecuador/AmwnA70UHLIgAAAAAElFTkSuQmCC.webp",
     "scope": "region",
     "tags": [
       "landscape"
     ],
-    "updatedAt": "2026-10-03T14:59:13.681Z"
+    "updatedAt": "2026-10-04T13:10:29.941Z"
   },
   {
     "id": "ecuador_1791040961907_6gv5m",
     "title": "Ecuador - Cana Fences",
     "description": "**Fences made of ca\u00f1a** are very often seen in Manabi",
-    "imageUrl": "data/ecuador/ft6mdr19fX33j3y127a3ftrv0fbv8GArAWAcX3nVwAAAAASUVORK5CYII.png",
+    "imageUrl": "data/ecuador/ft6mdr19fX33j3y127a3ftrv0fbv8GArAWAcX3nVwAAAAASUVORK5CYII.webp",
     "scope": "region",
     "tags": [
       "structures"
     ],
-    "updatedAt": "2026-10-04T12:23:56.129Z"
+    "updatedAt": "2026-10-04T13:12:45.643Z"
   },
   {
     "id": "ecuador_1791042933283_bf5vq",
     "title": "Ecuador - Santa Rosa Pole Paints",
     "description": "**Pole Paints** of **Pasaje**, **Machala**, **Arenillas** and **Santa Rosa cities**",
-    "imageUrl": "data/ecuador/image.png",
+    "imageUrl": "data/ecuador/image_3.webp",
     "scope": "city",
     "tags": [
       "poles",
       "structures"
     ],
-    "updatedAt": "2026-10-03T15:55:33.873Z"
+    "updatedAt": "2026-10-04T13:16:04.031Z"
   },
   {
     "id": "ecuador_1791043029009_b6e52",
     "title": "Ecuador - Chone Pole Paints",
     "description": "**Pole Paints** of **Chone city**",
-    "imageUrl": "data/ecuador/image_2.png",
+    "imageUrl": "data/ecuador/image_5.webp",
     "scope": "city",
     "tags": [
       "poles",
       "structures"
     ],
-    "updatedAt": "2026-10-03T15:57:18.209Z"
+    "updatedAt": "2026-10-04T13:16:30.312Z"
   },
   {
     "id": "ecuador_1791043096749_k30bi",
     "title": "Ecuador - Tarapoa Pole Paints",
     "description": "**Pole Paints** of **Tarapoa city**",
-    "imageUrl": "data/ecuador/image_3.png",
+    "imageUrl": "data/ecuador/image_9.webp",
     "scope": "city",
     "tags": [
       "poles",
       "structures"
     ],
-    "updatedAt": "2026-10-03T15:58:19.100Z"
+    "updatedAt": "2026-10-04T13:17:17.144Z"
   },
   {
     "id": "ecuador_1791043144965_pwo2z",
     "title": "Ecuador - Banos Pole Paints",
     "description": "**Pole Paints** of **Banos city**",
-    "imageUrl": "data/ecuador/image_4.png",
+    "imageUrl": "data/ecuador/image_6.webp",
     "scope": "city",
     "tags": [
       "poles",
       "structures"
     ],
-    "updatedAt": "2026-10-03T15:59:07.338Z"
+    "updatedAt": "2026-10-04T13:16:42.763Z"
   },
   {
     "id": "ecuador_1791043210309_zg3gp",
     "title": "Ecuador - Palestina Pole Paints",
     "description": "**Pole Paints** of **Palestina city**",
-    "imageUrl": "data/ecuador/image_5.png",
+    "imageUrl": "data/ecuador/image_2.webp",
     "scope": "city",
     "tags": [
       "poles",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:00:12.569Z"
+    "updatedAt": "2026-10-04T13:15:49.588Z"
   },
   {
     "id": "ecuador_1791043325819_nf322",
     "title": "Ecuador - Shushufindi Pole Paints",
     "description": "**Pole Paints** of **Shushufindi city**",
-    "imageUrl": "data/ecuador/image_6.png",
+    "imageUrl": "data/ecuador/image_8.webp",
     "scope": "city",
     "tags": [
       "poles",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:02:08.779Z"
+    "updatedAt": "2026-10-04T13:17:04.445Z"
   },
   {
     "id": "ecuador_1791043376728_2v065",
     "title": "Ecuador - Nueva Loja Pole Paints",
     "description": "**Pole Paints** of **Nueva Loja city**",
-    "imageUrl": "data/ecuador/image_7.png",
+    "imageUrl": "data/ecuador/image_7.webp",
     "scope": "city",
     "tags": [
       "poles",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:03:00.676Z"
+    "updatedAt": "2026-10-04T13:16:55.443Z"
   },
   {
     "id": "ecuador_1791043426225_t82ic",
     "title": "Ecuador - Portoviejo Pole Paints",
     "description": "**Pole Paints** of **Portoviejo city**",
-    "imageUrl": "data/ecuador/image_8.png",
+    "imageUrl": "data/ecuador/image_4.webp",
     "scope": "city",
     "tags": [
       "poles",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:03:48.814Z"
+    "updatedAt": "2026-10-04T13:16:13.902Z"
   },
   {
     "id": "ecuador_1791043684768_enymh",
     "title": "Ecuador - Esmeraldas Street Signs",
     "description": "**Street Signs** of **Esmeraldas city**",
-    "imageUrl": "data/ecuador/7qWhsCxfYzDvzHJziJQAAAABJRU5ErkJggg.png",
+    "imageUrl": "data/ecuador/7qWhsCxfYzDvzHJziJQAAAABJRU5ErkJggg.webp",
     "scope": "city",
     "tags": [
       "signs",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:08:05.364Z"
+    "updatedAt": "2026-10-04T13:19:35.263Z"
   },
   {
     "id": "ecuador_1791043720063_1lupo",
     "title": "Ecuador - Salinas Street Signs",
     "description": "**Street Signs** of **Salinas city**",
-    "imageUrl": "data/ecuador/jUT38GSP1WAAAAAElFTkSuQmCC.png",
+    "imageUrl": "data/ecuador/jUT38GSP1WAAAAAElFTkSuQmCC.webp",
     "scope": "city",
     "tags": [
       "signs",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:08:40.728Z"
+    "updatedAt": "2026-10-04T13:19:27.320Z"
   },
   {
     "id": "ecuador_1791043757678_fpt1i",
     "title": "Ecuador - Riobamba Street Signs",
     "description": "**Street Signs** of **Riobamba city**",
-    "imageUrl": "data/ecuador/evER3zfYqAAAAAElFTkSuQmCC.png",
+    "imageUrl": "data/ecuador/evER3zfYqAAAAAElFTkSuQmCC.webp",
     "scope": "city",
     "tags": [
       "signs",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:09:18.332Z"
+    "updatedAt": "2026-10-04T13:19:02.326Z"
   },
   {
     "id": "ecuador_1791043780475_inznf",
     "title": "Ecuador - Loja Street Signs",
     "description": "**Street Signs** of **Loja city**",
-    "imageUrl": "data/ecuador/image_9.png",
+    "imageUrl": "data/ecuador/image_15.webp",
     "scope": "city",
     "tags": [
       "signs",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:09:46.172Z"
+    "updatedAt": "2026-10-04T13:18:44.997Z"
   },
   {
     "id": "ecuador_1791043814503_8qpon",
     "title": "Ecuador - Tulcan Street Signs",
     "description": "**Street Signs** of **Tulcan city**",
-    "imageUrl": "data/ecuador/image_10.png",
+    "imageUrl": "data/ecuador/image_10.webp",
     "scope": "city",
     "tags": [
       "signs",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:10:23.805Z"
+    "updatedAt": "2026-10-04T13:17:46.163Z"
   },
   {
     "id": "ecuador_1791043968736_m1mk5",
     "title": "Ecuador - Santo Domingo Street Signs",
     "description": "**Street Signs** of **Santo Domingo city**",
-    "imageUrl": "data/ecuador/image_11.png",
+    "imageUrl": "data/ecuador/image_12.webp",
     "scope": "city",
     "tags": [
       "signs",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:12:51.593Z"
+    "updatedAt": "2026-10-04T13:18:08.778Z"
   },
   {
     "id": "ecuador_1791044039588_e4s4o",
     "title": "Ecuador - Guayaquil Street Signs",
     "description": "**Street Signs** of **Guayaquil city**",
-    "imageUrl": "data/ecuador/image_12.png",
+    "imageUrl": "data/ecuador/image_14.webp",
     "scope": "city",
     "tags": [
       "signs",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:14:02.704Z"
+    "updatedAt": "2026-10-04T13:18:32.306Z"
   },
   {
     "id": "ecuador_1791044081430_wieua",
     "title": "Ecuador - Ambato Street Signs",
     "description": "**Street Signs** of **Ambato city**",
-    "imageUrl": "data/ecuador/image_13.png",
+    "imageUrl": "data/ecuador/image_13.webp",
     "scope": "city",
     "tags": [
       "signs",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:14:45.620Z"
+    "updatedAt": "2026-10-04T13:18:22.506Z"
   },
   {
     "id": "ecuador_1791044109588_a0wqt",
     "title": "Ecuador - Cuenca Street Signs",
     "description": "**Street Signs** of **Cuenca city**",
-    "imageUrl": "data/ecuador/C3AjRSZmoGXAAAAAElFTkSuQmCC.png",
+    "imageUrl": "data/ecuador/C3AjRSZmoGXAAAAAElFTkSuQmCC.webp",
     "scope": "city",
     "tags": [
       "signs",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:15:10.215Z"
+    "updatedAt": "2026-10-04T13:19:17.730Z"
   },
   {
     "id": "ecuador_1791044132153_4nuwz",
     "title": "Ecuador - Quito Street Signs",
     "description": "**Street Signs** of **Quito city**",
-    "imageUrl": "data/ecuador/image_14.png",
+    "imageUrl": "data/ecuador/image_16.webp",
     "scope": "city",
     "tags": [
       "signs",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:15:36.446Z"
+    "updatedAt": "2026-10-04T13:18:54.188Z"
   },
   {
     "id": "ecuador_1791044207217_8p7r3",
     "title": "Ecuador - Ibarra Street Signs",
     "description": "**Street Signs** of **Ibarra city**",
-    "imageUrl": "data/ecuador/image_15.png",
+    "imageUrl": "data/ecuador/image_11.webp",
     "scope": "city",
     "tags": [
       "signs",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:16:50.537Z"
+    "updatedAt": "2026-10-04T13:17:56.271Z"
   },
   {
     "id": "ecuador_1791044729318_6v9cm",
     "title": "Ecuador - Oval Hole Poles",
     "description": "Electricity poles with **oval, see-through holes** are most common in Loja.\nThey are occasionally found in neighbouring provinces.",
-    "imageUrl": "data/ecuador/image_16.png",
+    "imageUrl": "data/ecuador/image1.webp",
     "scope": "region",
     "tags": [
       "poles"
     ],
-    "updatedAt": "2026-10-03T16:25:34.525Z"
+    "updatedAt": "2026-10-04T13:15:00.047Z"
   },
   {
     "id": "ecuador_1791045068223_21iqu",
     "title": "Ecuador - Machala Street Signs",
     "description": "**Street Signs** of **Machala city**",
-    "imageUrl": "data/ecuador/image_17.png",
+    "imageUrl": "data/ecuador/image_17.webp",
     "scope": "city",
     "tags": [
       "signs",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:31:20.107Z"
+    "updatedAt": "2026-10-04T13:19:49.780Z"
   },
   {
     "id": "ecuador_1791045203234_r4wzt",
     "title": "Ecuador - Esmeraldas Curbs",
     "description": "Although it is not 100%, **painted sidewalk curbs** are very common in **Esmeraldas city**, especially in Green and White.",
-    "imageUrl": "data/ecuador/h9hv8FJUjZl5SMmBEAAAAASUVORK5CYII.png",
+    "imageUrl": "data/ecuador/h9hv8FJUjZl5SMmBEAAAAASUVORK5CYII.webp",
     "scope": "city",
     "tags": [
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:33:24.849Z"
+    "updatedAt": "2026-10-04T13:20:39.867Z"
   },
   {
     "id": "ecuador_1791045363904_pnxtc",
     "title": "Ecuador - Esmeraldas Landscape",
     "description": "The province of Esmeraldas can look similar to the Amazon region, but it is significantly hillier.",
-    "imageUrl": "data/ecuador/Esmeraldes-EC.png",
+    "imageUrl": "data/ecuador/Esmeraldes-EC.webp",
     "scope": "region",
     "tags": [
       "landscape"
     ],
-    "updatedAt": "2026-10-03T16:36:04.762Z"
+    "updatedAt": "2026-10-04T13:10:20.305Z"
   },
   {
     "id": "ecuador_1791045512219_imsrx",
     "title": "Ecuador - Quevedo Street Signs",
     "description": "**Street Signs** of **Quevedo city**",
-    "imageUrl": "data/ecuador/ATibbmizyQSvmXgfB4PAoEUVO6gClfLNh1i3j1ag30emybIIy4eBqjlSyRHjU3Uspvo30CQhVLs5PkzsTXFYFM5GmeIxxP8CyKastBNXDAkAAAAASUVORK5CYII.png",
+    "imageUrl": "data/ecuador/ATibbmizyQSvmXgfB4PAoEUVO6gClfLNh1i3j1ag30emybIIy4eBqjlSyRHjU3Uspvo30CQhVLs5PkzsTXFYFM5GmeIxxP8CyKastBNXDAkAAAAASUVORK5CYII.webp",
     "scope": "city",
     "tags": [
       "poles",
       "structures"
     ],
-    "updatedAt": "2026-10-03T16:38:32.897Z"
+    "updatedAt": "2026-10-04T13:19:56.532Z"
   },
   {
     "id": "ecuador_1791112515337_e8141",
     "title": "Ecuador - Log",
     "description": "A **log** can be seen on the **E-20 and E-28** between **Quito** and **Quininde**",
-    "imageUrl": "data/ecuador/image_18.png",
+    "imageUrl": "data/ecuador/image.webp",
     "scope": "road",
     "tags": [
       "cars"
     ],
-    "updatedAt": "2026-10-04T11:17:14.325Z"
+    "updatedAt": "2026-10-04T12:52:10.930Z"
   }
 ]
