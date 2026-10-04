@@ -41421,18 +41421,6 @@
     "city": null,
     "road": null
   },
-  "Kp1WGSyTUPju_6p0UQzGgw": {
-    "metas": [
-      "ecuador_1791040961907_6gv5m"
-    ],
-    "lat": -2.2069,
-    "lng": -80.97074,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": "Santa Elena",
-    "city": null,
-    "road": null
-  },
   "jFjni3mYJ5CPW4r8jKh1Fg": {
     "metas": [
       "ecuador_1791040961907_6gv5m"
@@ -41529,18 +41517,6 @@
     "city": "Palestina",
     "road": null
   },
-  "F4lS2zHtk7EUFA2TeIiNXg": {
-    "metas": [
-      "ecuador_1791043325819_nf322"
-    ],
-    "lat": -0.1877,
-    "lng": -76.64975,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": "Sucumb\u00edos",
-    "city": "Shushufindi",
-    "road": null
-  },
   "Hr-Kb447j042txmm5fwoUQ": {
     "metas": [
       "ecuador_1791043376728_2v065"
@@ -41578,18 +41554,6 @@
     "city": "Esmeraldas",
     "road": null
   },
-  "CjHt_p4h3cjx_oKruJD51Q": {
-    "metas": [
-      "ecuador_1791043720063_1lupo"
-    ],
-    "lat": -2.20878,
-    "lng": -80.96326,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": "Santa Elena",
-    "city": "Salinas",
-    "road": null
-  },
   "SOjsNQ7KNeG7r9uNg_IRwQ": {
     "metas": [
       "ecuador_1791043757678_fpt1i"
@@ -41624,18 +41588,6 @@
     "nominatimCountry": "Ecuador",
     "region": "Carchi",
     "city": "Tulc\u00e1n",
-    "road": null
-  },
-  "H6gB6rgbCFJITqAY0zF7Jg": {
-    "metas": [
-      "ecuador_1791043968736_m1mk5"
-    ],
-    "lat": -0.25818,
-    "lng": -79.16784,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": "Santo Domingo de los Tsachilas",
-    "city": "Santo Domingo",
     "road": null
   },
   "CAoSF0NJSE0wb2dLRUlDQWdJQ1hvNUhUeGdF": {
@@ -41710,18 +41662,6 @@
     "city": null,
     "road": null
   },
-  "RKZMYE3EnPGA9drrWOcBMw": {
-    "metas": [
-      "ecuador_1791044729318_6v9cm"
-    ],
-    "lat": -4.45552,
-    "lng": -79.15036,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": "Zamora Chinchipe",
-    "city": null,
-    "road": null
-  },
   "w1VZiWnjaYooohfjW7XdPQ": {
     "metas": [
       "ecuador_1791045068223_21iqu"
@@ -41744,6 +41684,186 @@
     "nominatimCountry": "Ecuador",
     "region": "Los R\u00edos",
     "city": "Quevedo",
+    "road": null
+  },
+  "kNzOCDkACML3aY0YVz7PYg": {
+    "metas": [
+      "ecuador_1791112515337_e8141"
+    ],
+    "lat": 0.23871,
+    "lng": -79.29128,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "V\u00eda a La Sexta"
+  },
+  "ida8xacc0wV0HnDa46PnTA": {
+    "metas": [
+      "ecuador_1791112515337_e8141"
+    ],
+    "lat": 0.11145,
+    "lng": -79.20334,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "V\u00eda Los Bancos"
+  },
+  "HAkD7Z5DFIjRuO18Wa6l6w": {
+    "metas": [
+      "ecuador_1791112515337_e8141"
+    ],
+    "lat": -0.27289,
+    "lng": -79.09972,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "Montufar"
+  },
+  "RZGR2wSFKwITxxgIBnRWAQ": {
+    "metas": [
+      "ecuador_1791112515337_e8141"
+    ],
+    "lat": -0.45218,
+    "lng": -78.75193,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "Via Al\u00f3ag Santo Domingo"
+  },
+  "xulXF15kaLcMbGijy2QKeA": {
+    "metas": [
+      "ecuador_1791112515337_e8141"
+    ],
+    "lat": 0.20711,
+    "lng": -79.40694,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "E20"
+  },
+  "716rGYZuqMsAbwyasisxzg": {
+    "metas": [
+      "ecuador_1791112515337_e8141"
+    ],
+    "lat": 0.26467,
+    "lng": -79.19343,
+    "country": "Pichincha",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "V\u00eda Sin Nombre"
+  },
+  "rfF7QQOUdf5RE9igpicKfQ": {
+    "metas": [
+      "ecuador_1791112515337_e8141"
+    ],
+    "lat": 0.21484,
+    "lng": -79.13257,
+    "country": "Pichincha",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "V\u00eda a Abd\u00f3n Calder\u00f3n"
+  },
+  "TNllYeO3Ph3I-XRG3dRfLQ": {
+    "metas": [
+      "ecuador_1791112515337_e8141"
+    ],
+    "lat": -0.11765,
+    "lng": -79.25877,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "V\u00eda a Quinind\u00e9"
+  },
+  "AtKmEWLQ3kRSTj-WQsIv6Q": {
+    "metas": [
+      "ecuador_1791112515337_e8141"
+    ],
+    "lat": 0.18984,
+    "lng": -79.25448,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "Via la Sexta"
+  },
+  "w7tJr3e_4DRTJSyrgwPWHg": {
+    "metas": [
+      "ecuador_1791112515337_e8141"
+    ],
+    "lat": 0.17223,
+    "lng": -79.08145,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "V\u00eda a la 15 de mayo"
+  },
+  "f9SO9Deiu3nKYxD6pGprdQ": {
+    "metas": [
+      "ecuador_1791044729318_6v9cm"
+    ],
+    "lat": -3.77783,
+    "lng": -78.74518,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Zamora Chinchipe",
+    "city": null,
+    "road": null
+  },
+  "ChoaO1IAQBEbkOFtsyEe-g": {
+    "metas": [
+      "ecuador_1791040961907_6gv5m"
+    ],
+    "lat": -1.89454,
+    "lng": -80.73206,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Santa Elena Province",
+    "city": null,
+    "road": null
+  },
+  "alNvMmhS0hW6U6IQSGDKuQ": {
+    "metas": [
+      "ecuador_1791043325819_nf322"
+    ],
+    "lat": -0.18816,
+    "lng": -76.64445,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Sucumb\u00edos",
+    "city": "PRQUE CENTRAL SHUSHUFINDI",
+    "road": null
+  },
+  "GsMuixvMSEKvMkVO9gOcJQ": {
+    "metas": [
+      "ecuador_1791043968736_m1mk5"
+    ],
+    "lat": -0.25517,
+    "lng": -79.17159,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Santo Domingo de los Ts\u00e1chilas",
+    "city": "Santo Domingo de los Tsachilas",
+    "road": null
+  },
+  "4vx6rTvkDkpWqJsPAbG0MA": {
+    "metas": [
+      "ecuador_1791043720063_1lupo"
+    ],
+    "lat": -2.21355,
+    "lng": -80.95457,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": "Santa Elena Province",
+    "city": "Salinas",
     "road": null
   }
 }

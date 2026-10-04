@@ -59723,7 +59723,7 @@
       "soil",
       "camera"
     ],
-    "updatedAt": "2026-10-03T16:42:53.687Z"
+    "updatedAt": "2026-10-04T12:28:47.279Z"
   },
   {
     "id": "ecuador_1789901459196_0rkuj",
@@ -60967,7 +60967,7 @@
     "tags": [
       "structures"
     ],
-    "updatedAt": "2026-10-03T15:22:56.190Z"
+    "updatedAt": "2026-10-04T12:23:56.129Z"
   },
   {
     "id": "ecuador_1791042933283_bf5vq",
@@ -61253,5 +61253,16 @@
       "structures"
     ],
     "updatedAt": "2026-10-03T16:38:32.897Z"
+  },
+  {
+    "id": "ecuador_1791112515337_e8141",
+    "title": "Ecuador - Log",
+    "description": "A **log** can be seen on the **E-20 and E-28** between **Quito** and **Quininde**",
+    "imageUrl": "data/ecuador/image_18.png",
+    "scope": "road",
+    "tags": [
+      "cars"
+    ],
+    "updatedAt": "2026-10-04T11:17:14.325Z"
   }
 ]
