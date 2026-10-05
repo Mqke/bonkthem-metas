@@ -175,7 +175,8 @@
             snapshot.region = currentLocationData.region || null;
             snapshot.city = currentLocationData.city || null;
         } else if (normalizedScope === 'road') {
-            snapshot.road = currentLocationData.road || null;
+            // Whole road: the highway code (E20), not the name of one stretch of it.
+            snapshot.road = chooseRoadRef(currentLocationData.roadSources) || currentLocationData.road || null;
         } else if (normalizedScope === 'segment') {
             snapshot.road = chooseRoadRef(currentLocationData.roadSources) || currentLocationData.road || null;
             snapshot.segment = true;
@@ -248,6 +249,21 @@
         return refs.find(r => /^[a-z]{0,3}[\s-]?\d{1,4}[a-z]?$/i.test(r)) || refs[0] || chooseRoad(roadSources);
     }
 
+    // Roads identifying the current location for the "road" scope: the highway code (E20)
+    // first, then every other name/ref the geocoders gave, so entries stored earlier under
+    // the name of a stretch ("via aloag santo domingo") still match.
+    function getRoadScopeNames() {
+        const names = [];
+        const add = v => {
+            const k = String(v || '').toLowerCase().trim();
+            if (k && !names.includes(k)) names.push(k);
+        };
+        add(chooseRoadRef(currentLocationData.roadSources));
+        add(currentLocationData.road);
+        getRoadCandidateKeys(currentLocationData.roadSources).forEach(add);
+        return names;
+    }
+
     // Every name and ref the geocoders gave for the current road, normalized.
     function getRoadCandidateKeys(roadSources) {
         const keys = new Set();
@@ -314,7 +330,7 @@
     }
 
     // Waits (up to timeoutMs) until the road of the current location is final: both
-    // geocoders answered, or Google already gave a real name (it wins anyway).
+    // geocoders answered, or Google already gave a highway code (E20).
     // Returns true when final, false on timeout (the link then uses what is known).
     async function waitForRoadGeocoding(timeoutMs = 10000) {
         const deadline = Date.now() + timeoutMs;
@@ -322,8 +338,9 @@
         while (true) {
             const done = currentLocationData.geocodeDone || {};
             const sources = currentLocationData.roadSources;
-            const googleHasName = !!pickRoadName(sources && sources.google, getKnownRoadRefs(sources));
-            if ((done.google && done.nominatim) || (done.google && googleHasName)) return true;
+            const googleRefs = ((sources && sources.google && sources.google.refs) || []);
+            const googleHasRef = googleRefs.some(r => /^[a-z]{0,3}[\s-]?\d{1,4}[a-z]?$/i.test(String(r || '').trim()));
+            if ((done.google && done.nominatim) || (done.google && googleHasRef)) return true;
             if (Date.now() >= deadline) return false;
             if (!announced) {
                 announced = true;
@@ -436,7 +453,7 @@
                 isSameNullableName(entry.city, currentLocationData.city) && !hasRoad;
         }
         if (normalizedScope === 'road') {
-            const curRoads = getNormalizedRoadNames(currentLocationData.road);
+            const curRoads = getRoadScopeNames();
             return !entry.region && !entry.city && hasRoad && curRoads.length > 0 &&
                 curRoads.some(cr => entryRoads.some(er => isFuzzyNameMatch(cr, er)));
         }
@@ -6558,7 +6575,7 @@
         const curRegion = currentLocationData.region;
         const curCity = currentLocationData.city;
 
-        const curRoads = getNormalizedRoadNames(currentLocationData.road);
+        const curRoads = getRoadScopeNames();
         const curRoadKeys = getRoadCandidateKeys(currentLocationData.roadSources);
 
         if (curLat === null || curLng === null) return [];
