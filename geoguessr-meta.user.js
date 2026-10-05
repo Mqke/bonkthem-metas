@@ -1056,8 +1056,8 @@
 
     // ---- Segments (scope "segment") --------------------------------------------------
     // Each panorama linked to a segment meta is one point of the stretch. All the points
-    // of one meta on one road form a polyline; a location matches when it is on that road
-    // and within SEGMENT_CORRIDOR_KM of the polyline.
+    // of one meta on one road are the corners A and B of the stretch; a location matches
+    // when it is on that road and inside the rectangle they span (see isInsideSegment).
     function toLocalKm(lat, lng, refLat, refLng, cosLat) {
         let dLng = lng - refLng;
         while (dLng > 180) dLng -= 360;
@@ -1065,53 +1065,20 @@
         return [dLng * cosLat * 111.32, (lat - refLat) * 110.57];
     }
 
-    // Points ordered along the stretch: projected on the axis of the two farthest points,
-    // so the order does not depend on the order the panoramas were linked in.
-    function orderSegmentPoints(points) {
-        if (points.length <= 2) return points.slice();
-        const refLat = points[0].lat, refLng = points[0].lng;
-        const cosLat = Math.max(0.05, Math.cos(refLat * Math.PI / 180));
-        const xy = points.map(p => toLocalKm(p.lat, p.lng, refLat, refLng, cosLat));
-        let bi = 0, bj = 1, best = -1;
-        for (let i = 0; i < xy.length; i++) {
-            for (let j = i + 1; j < xy.length; j++) {
-                const d = (xy[i][0] - xy[j][0]) ** 2 + (xy[i][1] - xy[j][1]) ** 2;
-                if (d > best) { best = d; bi = i; bj = j; }
-            }
-        }
-        const ax = xy[bj][0] - xy[bi][0], ay = xy[bj][1] - xy[bi][1];
-        return points
-            .map((p, i) => ({ p, t: (xy[i][0] - xy[bi][0]) * ax + (xy[i][1] - xy[bi][1]) * ay }))
-            .sort((a, b) => a.t - b.t)
-            .map(o => o.p);
-    }
-
-    // Is the position "between" consecutive points of the path? The road itself is already
-    // checked by the caller (same name/ref), so the geometry only has to say whether the
-    // position lies along the stretch from A to B: its projection on A->B must fall
-    // inside it (small margin at the ends), and it must not be absurdly far to the side
-    // (roads curve, so the allowance is a share of the A-B length).
-    function isAlongSegmentPath(lat, lng, path) {
-        if (path.length === 1) {
-            const cosLat = Math.max(0.05, Math.cos(lat * Math.PI / 180));
-            const [px, py] = toLocalKm(path[0].lat, path[0].lng, lat, lng, cosLat);
-            return Math.hypot(px, py) <= SEGMENT_CORRIDOR_KM;
-        }
-        for (let i = 0; i < path.length - 1; i++) {
-            const a = path[i], b = path[i + 1];
-            const cosLat = Math.max(0.05, Math.cos(((a.lat + b.lat + lat) / 3) * Math.PI / 180));
-            const [px, py] = toLocalKm(a.lat, a.lng, lat, lng, cosLat);
-            const [qx, qy] = toLocalKm(b.lat, b.lng, lat, lng, cosLat);
-            const dx = qx - px, dy = qy - py;
-            const len = Math.hypot(dx, dy);
-            if (len === 0) continue;
-            const t = -(px * dx + py * dy) / (len * len);
-            const side = Math.abs(px * dy - py * dx) / len;
-            const endMargin = SEGMENT_END_MARGIN_KM / len;
-            if (t >= -endMargin && t <= 1 + endMargin &&
-                side <= Math.max(SEGMENT_MIN_SIDE_KM, len * SEGMENT_SIDE_RATIO)) return true;
-        }
-        return false;
+    // Is the position inside the stretch? The road itself is already checked by the caller
+    // (same name/ref), so the geometry only has to say whether the position lies between A
+    // and B. A and B are the two opposite corners of an axis-aligned rectangle (north/south,
+    // east/west), grown by SEGMENT_BOX_MARGIN_KM on every side: the box contains the bends
+    // and detours of the road, and a road running exactly north-south or east-west still
+    // gets some width. A single point (B not linked yet) is a circle of SEGMENT_CORRIDOR_KM.
+    function isInsideSegment(lat, lng, points) {
+        const cosLat = Math.max(0.05, Math.cos(lat * Math.PI / 180));
+        // Coordinates relative to the position, so the position is the origin (0, 0).
+        const xy = points.map(p => toLocalKm(p.lat, p.lng, lat, lng, cosLat));
+        if (xy.length === 1) return Math.hypot(xy[0][0], xy[0][1]) <= SEGMENT_CORRIDOR_KM;
+        const xs = xy.map(c => c[0]), ys = xy.map(c => c[1]);
+        return 0 >= Math.min(...xs) - SEGMENT_BOX_MARGIN_KM && 0 <= Math.max(...xs) + SEGMENT_BOX_MARGIN_KM &&
+            0 >= Math.min(...ys) - SEGMENT_BOX_MARGIN_KM && 0 <= Math.max(...ys) + SEGMENT_BOX_MARGIN_KM;
     }
 
     function buildSegmentIndex(entries) {
@@ -1126,7 +1093,7 @@
                 groups.get(key).points.push({ lat, lng });
             });
         });
-        return Array.from(groups.values()).map(g => ({ ...g, path: orderSegmentPoints(g.points) }));
+        return Array.from(groups.values());
     }
 
     function rebuildProximityIndexes() {
@@ -1245,13 +1212,10 @@
 
     const ALL_SCOPES = ['countrywide', 'region', 'city', 'road', 'segment', '100km', '10km', '1km', 'unique'];
     const LINKED_META_SCOPE_ORDER = ['unique', '1km', '10km', 'segment', 'road', 'city', '100km', 'region', 'countrywide'];
-    // "segment" scope: a single bound matches within SEGMENT_CORRIDOR_KM; between two
-    // bounds the position may stray sideways by max(SEGMENT_MIN_SIDE_KM, length * RATIO)
-    // and go SEGMENT_END_MARGIN_KM past either end.
+    // "segment" scope: two bounds A and B are the opposite corners of a rectangle, grown by
+    // SEGMENT_BOX_MARGIN_KM on every side; a single bound matches within SEGMENT_CORRIDOR_KM.
     const SEGMENT_CORRIDOR_KM = 5;
-    const SEGMENT_END_MARGIN_KM = 2;
-    const SEGMENT_MIN_SIDE_KM = 10;
-    const SEGMENT_SIDE_RATIO = 0.3;
+    const SEGMENT_BOX_MARGIN_KM = 1.5;
     const LINKED_META_SCOPE_RANK = new Map(LINKED_META_SCOPE_ORDER.map((scope, index) => [scope, index]));
     const TAG_PRESETS = ['plants', 'landscape', 'bollards', 'poles', 'signs', 'plates', 'cars', 'soil', 'structures', 'road', 'camera', 'language', 'architecture', 'antenna'];
     let activeScopes = loadActiveScopes();
@@ -6662,7 +6626,7 @@
                 if (!curRoadKeys.includes(seg.road)) return;
                 const meta = getMetaById(seg.metaId);
                 if (!meta || normalizeScope(meta.scope) !== 'segment') return;
-                if (isAlongSegmentPath(curLat, curLng, seg.path)) {
+                if (isInsideSegment(curLat, curLng, seg.points)) {
                     matchedMetaIds.add(seg.metaId);
                     matches.push(meta);
                 }

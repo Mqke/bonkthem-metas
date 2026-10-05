@@ -41445,18 +41445,6 @@
     "city": null,
     "road": null
   },
-  "Ia4hKsB66wv7iEJ8BTb4Yg": {
-    "metas": [
-      "ecuador_1789901459193_0gb32"
-    ],
-    "lat": -2.20623,
-    "lng": -80.06893,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "V\u00eda a la Costa"
-  },
   "fxkAqP6nVOsWRZ5zwzOGVQ": {
     "metas": [
       "ecuador_1791042933283_bf5vq"
@@ -41489,7 +41477,7 @@
     "lng": -76.34196,
     "country": "Ecuador",
     "nominatimCountry": "Ecuador",
-    "region": "Sucumbios",
+    "region": "Sucumb\u00edos",
     "city": "Tarapoa",
     "road": null
   },
@@ -41686,126 +41674,6 @@
     "city": "Quevedo",
     "road": null
   },
-  "kNzOCDkACML3aY0YVz7PYg": {
-    "metas": [
-      "ecuador_1791112515337_e8141"
-    ],
-    "lat": 0.23871,
-    "lng": -79.29128,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "V\u00eda a La Sexta"
-  },
-  "ida8xacc0wV0HnDa46PnTA": {
-    "metas": [
-      "ecuador_1791112515337_e8141"
-    ],
-    "lat": 0.11145,
-    "lng": -79.20334,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "V\u00eda Los Bancos"
-  },
-  "HAkD7Z5DFIjRuO18Wa6l6w": {
-    "metas": [
-      "ecuador_1791112515337_e8141"
-    ],
-    "lat": -0.27289,
-    "lng": -79.09972,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "Montufar"
-  },
-  "RZGR2wSFKwITxxgIBnRWAQ": {
-    "metas": [
-      "ecuador_1791112515337_e8141"
-    ],
-    "lat": -0.45218,
-    "lng": -78.75193,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "Via Al\u00f3ag Santo Domingo"
-  },
-  "xulXF15kaLcMbGijy2QKeA": {
-    "metas": [
-      "ecuador_1791112515337_e8141"
-    ],
-    "lat": 0.20711,
-    "lng": -79.40694,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "E20"
-  },
-  "716rGYZuqMsAbwyasisxzg": {
-    "metas": [
-      "ecuador_1791112515337_e8141"
-    ],
-    "lat": 0.26467,
-    "lng": -79.19343,
-    "country": "Pichincha",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "V\u00eda Sin Nombre"
-  },
-  "rfF7QQOUdf5RE9igpicKfQ": {
-    "metas": [
-      "ecuador_1791112515337_e8141"
-    ],
-    "lat": 0.21484,
-    "lng": -79.13257,
-    "country": "Pichincha",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "V\u00eda a Abd\u00f3n Calder\u00f3n"
-  },
-  "TNllYeO3Ph3I-XRG3dRfLQ": {
-    "metas": [
-      "ecuador_1791112515337_e8141"
-    ],
-    "lat": -0.11765,
-    "lng": -79.25877,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "V\u00eda a Quinind\u00e9"
-  },
-  "AtKmEWLQ3kRSTj-WQsIv6Q": {
-    "metas": [
-      "ecuador_1791112515337_e8141"
-    ],
-    "lat": 0.18984,
-    "lng": -79.25448,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "Via la Sexta"
-  },
-  "w7tJr3e_4DRTJSyrgwPWHg": {
-    "metas": [
-      "ecuador_1791112515337_e8141"
-    ],
-    "lat": 0.17223,
-    "lng": -79.08145,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "V\u00eda a la 15 de mayo"
-  },
   "f9SO9Deiu3nKYxD6pGprdQ": {
     "metas": [
       "ecuador_1791044729318_6v9cm"
@@ -41826,7 +41694,7 @@
     "lng": -80.73206,
     "country": "Ecuador",
     "nominatimCountry": "Ecuador",
-    "region": "Santa Elena Province",
+    "region": "Santa Elena",
     "city": null,
     "road": null
   },
@@ -41839,7 +41707,7 @@
     "country": "Ecuador",
     "nominatimCountry": "Ecuador",
     "region": "Sucumb\u00edos",
-    "city": "PRQUE CENTRAL SHUSHUFINDI",
+    "city": "Shushufindi",
     "road": null
   },
   "GsMuixvMSEKvMkVO9gOcJQ": {
@@ -41862,8 +41730,60 @@
     "lng": -80.95457,
     "country": "Ecuador",
     "nominatimCountry": "Ecuador",
-    "region": "Santa Elena Province",
+    "region": "Santa Elena",
     "city": "Salinas",
     "road": null
+  },
+  "3KL0H_iEcBWQc-WF8YA_zg": {
+    "metas": [
+      "ecuador_1791112515337_e8141"
+    ],
+    "lat": -0.46377,
+    "lng": -78.59314,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "E20",
+    "segment": true
+  },
+  "VTAVQ7NAOvNCTi4Xw8fiKw": {
+    "metas": [
+      "ecuador_1791112515337_e8141"
+    ],
+    "lat": 0.27947,
+    "lng": -79.44549,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "E20",
+    "segment": true
+  },
+  "Qla4pf3OXlPjKdPZb4xftQ": {
+    "metas": [
+      "ecuador_1789901459193_0gb32"
+    ],
+    "lat": -2.15137,
+    "lng": -80.77834,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "E40",
+    "segment": true
+  },
+  "CAoSFkNJSE0wb2dLRUlDQWdJRGw5ZEs4V1E.": {
+    "metas": [
+      "ecuador_1789901459193_0gb32"
+    ],
+    "lat": -2.73869,
+    "lng": -79.90983,
+    "country": "Ecuador",
+    "nominatimCountry": "Ecuador",
+    "region": null,
+    "city": null,
+    "road": "E40",
+    "segment": true
   }
 }

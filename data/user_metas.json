@@ -59695,11 +59695,11 @@
     "title": "Ecuador - E-40 Highway",
     "description": "The **E-40 between Salinas and Guayaquil** is one of the only **divided highways**, and the only one in the **dry area** near the southwestern coast.",
     "imageUrl": "data/ecuador/ec_e40.webp",
-    "scope": "road",
+    "scope": "segment",
     "tags": [
       "road"
     ],
-    "updatedAt": "2026-10-04T13:21:16.296Z"
+    "updatedAt": "2026-10-05T18:02:13.279Z"
   },
   {
     "id": "ecuador_1789901459194_b9gjv",
@@ -61261,10 +61261,10 @@
     "title": "Ecuador - Log",
     "description": "A **log** can be seen on the **E-20 and E-28** between **Quito** and **Quininde**",
     "imageUrl": "data/ecuador/image.webp",
-    "scope": "road",
+    "scope": "segment",
     "tags": [
       "cars"
     ],
-    "updatedAt": "2026-10-04T12:52:10.930Z"
+    "updatedAt": "2026-10-05T17:42:16.798Z"
   }
 ]
