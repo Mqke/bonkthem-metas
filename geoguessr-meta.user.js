@@ -81,6 +81,7 @@
     let lastProximityCacheKey = null;
     let lastProximityMatches = [];
     let indexedLocationEntries = [];
+    let indexedSegments = [];
 
     /** @type {Meta[]} Loaded meta definitions */
     let metasData = [];
@@ -175,6 +176,9 @@
             snapshot.city = currentLocationData.city || null;
         } else if (normalizedScope === 'road') {
             snapshot.road = currentLocationData.road || null;
+        } else if (normalizedScope === 'segment') {
+            snapshot.road = chooseRoadRef(currentLocationData.roadSources) || currentLocationData.road || null;
+            snapshot.segment = true;
         }
 
         return snapshot;
@@ -233,6 +237,30 @@
         return null;
     }
 
+    // Road for a "segment" scope: the highway code (E20) is wanted, not the local name of
+    // the stretch. OSM ref tags are the most reliable, then Google short names that look
+    // like a code, then any ref, then the usual name.
+    function chooseRoadRef(roadSources) {
+        const refs = [
+            ...(((roadSources && roadSources.nominatim) || {}).refs || []),
+            ...(((roadSources && roadSources.google) || {}).refs || [])
+        ].map(r => String(r || '').trim()).filter(Boolean);
+        return refs.find(r => /^[a-z]{0,3}[\s-]?\d{1,4}[a-z]?$/i.test(r)) || refs[0] || chooseRoad(roadSources);
+    }
+
+    // Every name and ref the geocoders gave for the current road, normalized.
+    function getRoadCandidateKeys(roadSources) {
+        const keys = new Set();
+        ['google', 'nominatim'].forEach(src => {
+            const source = (roadSources && roadSources[src]) || {};
+            [...(source.names || []), ...(source.refs || [])].forEach(v => {
+                const k = normalizeRoadKey(v);
+                if (k) keys.add(k);
+            });
+        });
+        return Array.from(keys);
+    }
+
     // Region / city: one raw value per source. Nominatim has priority (its language is
     // fixed to English, so a place always gets the same name), Google is the fallback.
     function newPlaceSources() {
@@ -242,7 +270,9 @@
     function applyPlaceNames() {
         const src = currentLocationData.placeSources || newPlaceSources();
         currentLocationData.region = src.nominatim.region || src.google.region || null;
-        currentLocationData.city = src.nominatim.city || src.google.city || null;
+        // City: Google's "locality" is the real city (Quito); Nominatim's town/village is often
+        // just a neighbourhood (Carapungo), so it is only the fallback.
+        currentLocationData.city = src.google.city || src.nominatim.city || null;
     }
 
     // Google route component: short_name differing from long_name is the road code (E20).
@@ -272,7 +302,7 @@
     // Waits for the geocoding the given scope depends on (road / region / city).
     async function waitForScopeGeocoding(scope) {
         const normalized = normalizeScope(scope);
-        if (normalized === 'road') return waitForRoadGeocoding();
+        if (normalized === 'road' || normalized === 'segment') return waitForRoadGeocoding();
         if (normalized === 'region' || normalized === 'city') return waitForPlaceGeocoding();
         return true;
     }
@@ -379,6 +409,8 @@
     //   region -> same region, no city, no road
     //   city   -> same region + same city, no road
     //   road   -> a shared road name, no region, no city
+    //   segment-> like road but flagged `segment: true`; one entry per linked panorama,
+    //             each one is a point of the stretch (see evaluateProximityMetas)
     // Because the shape is exact, an entry created for one scope is never reused
     // (and therefore never "upgraded" with extra fields) by a meta of another scope.
     function entryFitsScope(entry, scope) {
@@ -386,6 +418,14 @@
         const normalizedScope = normalizeScope(scope);
         const entryRoads = getNormalizedRoadNames(entry.road);
         const hasRoad = entryRoads.length > 0;
+
+        if (normalizedScope === 'segment') {
+            // One entry per panorama: only the entry of the same position is reused.
+            return !!entry.segment && !entry.region && !entry.city && hasRoad &&
+                isSameCoordinate(entry.lat, currentLocationData.lat) &&
+                isSameCoordinate(entry.lng, currentLocationData.lng);
+        }
+        if (entry.segment) return false;
 
         if (normalizedScope === 'region') {
             return isSameNullableName(entry.region, currentLocationData.region) &&
@@ -430,7 +470,7 @@
 
     // Keys of a location map are either "<panoid>" or "<panoid>__<scope>" (a second,
     // third... entry created for the same panoid because it needs a different shape).
-    const SCOPED_KEY_SUFFIX_RE = /^(countrywide|region|city|road|100km|10km|1km|unique)(_\d+)?$/;
+    const SCOPED_KEY_SUFFIX_RE = /^(countrywide|region|city|road|segment|100km|10km|1km|unique)(_\d+)?$/;
 
     function isOwnLocationKey(key, panoid) {
         if (key === panoid) return true;
@@ -514,6 +554,7 @@
                 if ('region' in scopedSnapshot && !entry.region) entry.region = scopedSnapshot.region;
                 if ('city' in scopedSnapshot && !entry.city) entry.city = scopedSnapshot.city;
                 if ('road' in scopedSnapshot && !entry.road) entry.road = scopedSnapshot.road;
+                if (scopedSnapshot.segment) entry.segment = true;
             }
 
             usedKeys.set(id, targetKey);
@@ -996,6 +1037,81 @@
         return metaSearchTextById;
     }
 
+    // ---- Segments (scope "segment") --------------------------------------------------
+    // Each panorama linked to a segment meta is one point of the stretch. All the points
+    // of one meta on one road form a polyline; a location matches when it is on that road
+    // and within SEGMENT_CORRIDOR_KM of the polyline.
+    function toLocalKm(lat, lng, refLat, refLng, cosLat) {
+        let dLng = lng - refLng;
+        while (dLng > 180) dLng -= 360;
+        while (dLng < -180) dLng += 360;
+        return [dLng * cosLat * 111.32, (lat - refLat) * 110.57];
+    }
+
+    // Points ordered along the stretch: projected on the axis of the two farthest points,
+    // so the order does not depend on the order the panoramas were linked in.
+    function orderSegmentPoints(points) {
+        if (points.length <= 2) return points.slice();
+        const refLat = points[0].lat, refLng = points[0].lng;
+        const cosLat = Math.max(0.05, Math.cos(refLat * Math.PI / 180));
+        const xy = points.map(p => toLocalKm(p.lat, p.lng, refLat, refLng, cosLat));
+        let bi = 0, bj = 1, best = -1;
+        for (let i = 0; i < xy.length; i++) {
+            for (let j = i + 1; j < xy.length; j++) {
+                const d = (xy[i][0] - xy[j][0]) ** 2 + (xy[i][1] - xy[j][1]) ** 2;
+                if (d > best) { best = d; bi = i; bj = j; }
+            }
+        }
+        const ax = xy[bj][0] - xy[bi][0], ay = xy[bj][1] - xy[bi][1];
+        return points
+            .map((p, i) => ({ p, t: (xy[i][0] - xy[bi][0]) * ax + (xy[i][1] - xy[bi][1]) * ay }))
+            .sort((a, b) => a.t - b.t)
+            .map(o => o.p);
+    }
+
+    // Is the position "between" consecutive points of the path? The road itself is already
+    // checked by the caller (same name/ref), so the geometry only has to say whether the
+    // position lies along the stretch from A to B: its projection on A->B must fall
+    // inside it (small margin at the ends), and it must not be absurdly far to the side
+    // (roads curve, so the allowance is a share of the A-B length).
+    function isAlongSegmentPath(lat, lng, path) {
+        if (path.length === 1) {
+            const cosLat = Math.max(0.05, Math.cos(lat * Math.PI / 180));
+            const [px, py] = toLocalKm(path[0].lat, path[0].lng, lat, lng, cosLat);
+            return Math.hypot(px, py) <= SEGMENT_CORRIDOR_KM;
+        }
+        for (let i = 0; i < path.length - 1; i++) {
+            const a = path[i], b = path[i + 1];
+            const cosLat = Math.max(0.05, Math.cos(((a.lat + b.lat + lat) / 3) * Math.PI / 180));
+            const [px, py] = toLocalKm(a.lat, a.lng, lat, lng, cosLat);
+            const [qx, qy] = toLocalKm(b.lat, b.lng, lat, lng, cosLat);
+            const dx = qx - px, dy = qy - py;
+            const len = Math.hypot(dx, dy);
+            if (len === 0) continue;
+            const t = -(px * dx + py * dy) / (len * len);
+            const side = Math.abs(px * dy - py * dx) / len;
+            const endMargin = SEGMENT_END_MARGIN_KM / len;
+            if (t >= -endMargin && t <= 1 + endMargin &&
+                side <= Math.max(SEGMENT_MIN_SIDE_KM, len * SEGMENT_SIDE_RATIO)) return true;
+        }
+        return false;
+    }
+
+    function buildSegmentIndex(entries) {
+        const groups = new Map();
+        entries.forEach(({ metaIds, lat, lng, country, roads, segment }) => {
+            if (!segment || lat === null || lng === null) return;
+            const road = normalizeRoadKey(roads[0]);
+            if (!road) return;
+            metaIds.forEach(id => {
+                const key = `${id}\u0000${road}`;
+                if (!groups.has(key)) groups.set(key, { metaId: id, road, country, points: [] });
+                groups.get(key).points.push({ lat, lng });
+            });
+        });
+        return Array.from(groups.values()).map(g => ({ ...g, path: orderSegmentPoints(g.points) }));
+    }
+
     function rebuildProximityIndexes() {
         indexedLocationEntries = [];
         forEachCombinedLocationEntry((panoid, entry) => {
@@ -1009,9 +1125,11 @@
                 country,
                 region: entry.region,
                 city: entry.city,
-                roads: getNormalizedRoadNames(entry.road)
+                roads: getNormalizedRoadNames(entry.road),
+                segment: !!entry.segment
             });
         });
+        indexedSegments = buildSegmentIndex(indexedLocationEntries);
         proximityIndexDirty = false;
         proximityIndexVersion += 1;
         lastProximityCacheKey = null;
@@ -1108,8 +1226,15 @@
     let activeMutationCount = 0;
     let backgroundRefreshTimer = null;
 
-    const ALL_SCOPES = ['countrywide', 'region', 'city', 'road', '100km', '10km', '1km', 'unique'];
-    const LINKED_META_SCOPE_ORDER = ['unique', '1km', '10km', 'road', 'city', '100km', 'region', 'countrywide'];
+    const ALL_SCOPES = ['countrywide', 'region', 'city', 'road', 'segment', '100km', '10km', '1km', 'unique'];
+    const LINKED_META_SCOPE_ORDER = ['unique', '1km', '10km', 'segment', 'road', 'city', '100km', 'region', 'countrywide'];
+    // "segment" scope: a single bound matches within SEGMENT_CORRIDOR_KM; between two
+    // bounds the position may stray sideways by max(SEGMENT_MIN_SIDE_KM, length * RATIO)
+    // and go SEGMENT_END_MARGIN_KM past either end.
+    const SEGMENT_CORRIDOR_KM = 5;
+    const SEGMENT_END_MARGIN_KM = 2;
+    const SEGMENT_MIN_SIDE_KM = 10;
+    const SEGMENT_SIDE_RATIO = 0.3;
     const LINKED_META_SCOPE_RANK = new Map(LINKED_META_SCOPE_ORDER.map((scope, index) => [scope, index]));
     const TAG_PRESETS = ['plants', 'landscape', 'bollards', 'poles', 'signs', 'plates', 'cars', 'soil', 'structures', 'road', 'camera', 'language', 'architecture', 'antenna'];
     let activeScopes = loadActiveScopes();
@@ -1791,6 +1916,8 @@
                 const knownScopes = storedScopes
                     .map(scope => normalizeScope(scope, null))
                     .filter(Boolean);
+                // "segment" is newer than the stored list: follow "road" when unknown.
+                if (!storedScopes.includes('segment') && knownScopes.includes('road')) knownScopes.push('segment');
                 if (knownScopes.length > 0) return new Set(knownScopes);
             }
         } catch (err) {
@@ -3745,6 +3872,13 @@
             if (lat !== null && lng !== null) {
                 return `${lat.toFixed(6)} ${lng.toFixed(6)} (${normalizeScope(location.scope)})`;
             }
+        }
+
+        if (normalizeScope(location.scope) === 'segment') {
+            const lat = normalizeCoordinate(location.lat);
+            const lng = normalizeCoordinate(location.lng);
+            const point = lat !== null && lng !== null ? ` ${lat.toFixed(6)} ${lng.toFixed(6)}` : '';
+            return `${location.displayCountry || 'Unknown country'}, ${formatLocationValue(location.road)} (segment${point})`;
         }
 
         const parts = [
@@ -6425,6 +6559,7 @@
         const curCity = currentLocationData.city;
 
         const curRoads = getNormalizedRoadNames(currentLocationData.road);
+        const curRoadKeys = getRoadCandidateKeys(currentLocationData.roadSources);
 
         if (curLat === null || curLng === null) return [];
 
@@ -6439,7 +6574,8 @@
             curNomCountry,
             curRegion || '',
             curCity || '',
-            curRoads
+            curRoads,
+            curRoadKeys
         ]);
         if (proximityCacheKey === lastProximityCacheKey) return lastProximityMatches;
 
@@ -6500,6 +6636,21 @@
                  }
             });
         });
+
+        // Segments: on the same road (name or ref) and inside the corridor of the stretch.
+        if (curRoadKeys.length > 0) {
+            indexedSegments.forEach(seg => {
+                if (matchedMetaIds.has(seg.metaId)) return;
+                if (seg.country !== curCountry && seg.country !== curNomCountry) return;
+                if (!curRoadKeys.includes(seg.road)) return;
+                const meta = getMetaById(seg.metaId);
+                if (!meta || normalizeScope(meta.scope) !== 'segment') return;
+                if (isAlongSegmentPath(curLat, curLng, seg.path)) {
+                    matchedMetaIds.add(seg.metaId);
+                    matches.push(meta);
+                }
+            });
+        }
 
         lastProximityCacheKey = proximityCacheKey;
         lastProximityMatches = matches;
@@ -6671,14 +6822,18 @@
                             let gCity = null;
                             const gRoadSource = { names: [], refs: [] };
 
+                            let gCityFallback = null;
                             addrComp.forEach(comp => {
                                 if (comp.types.includes("country")) gCountry = comp.long_name;
                                 if (comp.types.includes("administrative_area_level_1")) gRegion = comp.long_name;
-                                if (comp.types.includes("locality") || comp.types.includes("administrative_area_level_2")) {
+                                if (comp.types.includes("locality") || comp.types.includes("postal_town")) {
                                     if (!gCity) gCity = comp.long_name; // Prefer locality
+                                } else if (comp.types.includes("administrative_area_level_2")) {
+                                    if (!gCityFallback) gCityFallback = comp.long_name;
                                 }
                                 if (comp.types.includes("route")) addGoogleRouteComponent(gRoadSource, comp);
                             });
+                            if (!gCity) gCity = gCityFallback;
                             // Other results can expose the same road under another name/ref
                             results.slice(1, 5).forEach(r => {
                                 if (!r.types || !r.types.includes('route')) return;
@@ -6731,8 +6886,8 @@
                             const address = data.display_name;
                             let nCountry = a.country || country;
                             let realNomCountry = normalizeCountry(nCountry, lat, lng);
-                            let region = a.state || a.region || a.province || a.county || a.district || null;
-                            let city = a.city || a.town || a.village || a.hamlet || a.municipality || null;
+                            let region = a.state || a.region || a.province || null;
+                            let city = a.city || a.municipality || a.town || a.village || null;
 
                             // Road Logic: names and refs of the road (no suburb/hamlet/village,
                             // which are places, not roads). OSM "ref" tags are real refs.
