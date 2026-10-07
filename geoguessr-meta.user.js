@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         BetterMetas
 // @namespace    http://tampermonkey.net/
-// @version      0.11
+// @version      0.13
 // @description  Displays crowdsourced metas and hints for Geoguessr locations.
 // @author       Lukas Hzb
 // @updateURL    https://github.com/lukas-hzb/better_metas/raw/refs/heads/main_v4/geoguessr-meta.user.js
@@ -129,6 +129,18 @@
                 normalized[field] = null;
             }
         });
+
+        // Segment entry: point A is lat/lng, point B is latB/lngB (both null while B is not
+        // linked yet) and `road` is a list.
+        if (normalized.segment) {
+            normalized.road = getSegmentRoadList(normalized.road);
+            normalized.latB = normalizeCoordinate(normalized.latB);
+            normalized.lngB = normalizeCoordinate(normalized.lngB);
+            if (normalized.latB === null || normalized.lngB === null) {
+                normalized.latB = null;
+                normalized.lngB = null;
+            }
+        }
         return normalized;
     }
 
@@ -178,7 +190,10 @@
             // Whole road: the highway code (E20), not the name of one stretch of it.
             snapshot.road = chooseRoadRef(currentLocationData.roadSources) || currentLocationData.road || null;
         } else if (normalizedScope === 'segment') {
-            snapshot.road = chooseRoadRef(currentLocationData.roadSources) || currentLocationData.road || null;
+            // A segment stores a LIST of roads; this location's road is the first one.
+            snapshot.road = getSegmentRoadList(chooseRoadRef(currentLocationData.roadSources) || currentLocationData.road);
+            snapshot.latB = null;
+            snapshot.lngB = null;
             snapshot.segment = true;
         }
 
@@ -426,8 +441,9 @@
     //   region -> same region, no city, no road
     //   city   -> same region + same city, no road
     //   road   -> a shared road name, no region, no city
-    //   segment-> like road but flagged `segment: true`; one entry per linked panorama,
-    //             each one is a point of the stretch (see evaluateProximityMetas)
+    //   segment-> like road but flagged `segment: true`, with a LIST of roads and the two
+    //             corners of the stretch: lat/lng (A) and latB/lngB (B). One entry holds
+    //             one meta (see findSegmentLinkKey / evaluateProximityMetas)
     // Because the shape is exact, an entry created for one scope is never reused
     // (and therefore never "upgraded" with extra fields) by a meta of another scope.
     function entryFitsScope(entry, scope) {
@@ -437,10 +453,8 @@
         const hasRoad = entryRoads.length > 0;
 
         if (normalizedScope === 'segment') {
-            // One entry per panorama: only the entry of the same position is reused.
-            return !!entry.segment && !entry.region && !entry.city && hasRoad &&
-                isSameCoordinate(entry.lat, currentLocationData.lat) &&
-                isSameCoordinate(entry.lng, currentLocationData.lng);
+            // Shape only: which segment entry a meta joins is decided by findSegmentLinkKey.
+            return !!entry.segment && !entry.region && !entry.city && hasRoad;
         }
         if (entry.segment) return false;
 
@@ -514,7 +528,9 @@
     // otherwise create a NEW entry ("<panoid>" if free, else "<panoid>__<scope>").
     function resolveKeyForNewLink(locations, panoid, scope) {
         const normalizedScope = normalizeScope(scope);
-        const ownKey = getOwnLocationKeys(locations, panoid)
+        // A segment entry belongs to ONE meta (its rectangle is part of the entry), so an
+        // existing entry is never reused for a new segment link.
+        const ownKey = normalizedScope === 'segment' ? null : getOwnLocationKeys(locations, panoid)
             .find(key => entryFitsScope(locations[key], normalizedScope));
         if (ownKey) return ownKey;
 
@@ -552,7 +568,9 @@
             let targetKey = forcedKeys && forcedKeys.get(id);
             if (!targetKey) {
                 if (scope) {
-                    targetKey = findMatchingLocationKey(locations, scope) ||
+                    targetKey = (normalizeScope(scope) === 'segment'
+                        ? findSegmentLinkKey(locations, id)
+                        : findMatchingLocationKey(locations, scope)) ||
                         resolveKeyForNewLink(locations, panoid, scope);
                 } else {
                     targetKey = panoid;
@@ -570,8 +588,18 @@
                 const scopedSnapshot = getLocationSnapshotForScope(scope);
                 if ('region' in scopedSnapshot && !entry.region) entry.region = scopedSnapshot.region;
                 if ('city' in scopedSnapshot && !entry.city) entry.city = scopedSnapshot.city;
-                if ('road' in scopedSnapshot && !entry.road) entry.road = scopedSnapshot.road;
-                if (scopedSnapshot.segment) entry.segment = true;
+                if (scopedSnapshot.segment) {
+                    applyCurrentLocationToSegmentEntry(entry, scopedSnapshot.road);
+                    console.log('[BetterMetas] Segment link:', {
+                        meta: id,
+                        key: targetKey,
+                        pointA: [entry.lat, entry.lng],
+                        pointB: [entry.latB, entry.lngB],
+                        roads: entry.road
+                    });
+                } else if ('road' in scopedSnapshot && !entry.road) {
+                    entry.road = scopedSnapshot.road;
+                }
             }
 
             usedKeys.set(id, targetKey);
@@ -1055,9 +1083,13 @@
     }
 
     // ---- Segments (scope "segment") --------------------------------------------------
-    // Each panorama linked to a segment meta is one point of the stretch. All the points
-    // of one meta on one road are the corners A and B of the stretch; a location matches
-    // when it is on that road and inside the rectangle they span (see isInsideSegment).
+    // A segment is stored in ONE location entry:
+    //   lat / lng     corner A (the panorama the entry is keyed on)
+    //   latB / lngB   corner B (null until a second location is linked)
+    //   road          LIST of roads of the stretch (names / refs)
+    // A location matches when it is on ANY road of the list and inside the rectangle
+    // spanned by A and B (see isInsideSegment). An entry holds a single meta, so a meta can
+    // have several entries = several stretches.
     function toLocalKm(lat, lng, refLat, refLng, cosLat) {
         let dLng = lng - refLng;
         while (dLng > 180) dLng -= 360;
@@ -1081,19 +1113,125 @@
             0 >= Math.min(...ys) - SEGMENT_BOX_MARGIN_KM && 0 <= Math.max(...ys) + SEGMENT_BOX_MARGIN_KM;
     }
 
-    function buildSegmentIndex(entries) {
-        const groups = new Map();
-        entries.forEach(({ metaIds, lat, lng, country, roads, segment }) => {
-            if (!segment || lat === null || lng === null) return;
-            const road = normalizeRoadKey(roads[0]);
-            if (!road) return;
-            metaIds.forEach(id => {
-                const key = `${id}\u0000${road}`;
-                if (!groups.has(key)) groups.set(key, { metaId: id, road, country, points: [] });
-                groups.get(key).points.push({ lat, lng });
-            });
+    // Distinct, trimmed roads (accent/case-insensitive) from a string or a list.
+    function getSegmentRoadList(value) {
+        const seen = new Set();
+        const list = [];
+        (Array.isArray(value) ? value : [value]).forEach(road => {
+            const text = road === null || road === undefined ? '' : String(road).trim();
+            const key = normalizeRoadKey(text);
+            if (!key || seen.has(key)) return;
+            seen.add(key);
+            list.push(text);
         });
-        return Array.from(groups.values());
+        return list;
+    }
+
+    function hasSegmentPointB(entry) {
+        return !!entry && normalizeCoordinate(entry.latB) !== null && normalizeCoordinate(entry.lngB) !== null;
+    }
+
+    // Does the road list of the entry cover the current location (any road in common with
+    // the names/refs the geocoders gave for it)?
+    function segmentRoadsCoverCurrentLocation(entry) {
+        const curRoadKeys = getRoadCandidateKeys(currentLocationData.roadSources);
+        return getSegmentRoadList(entry.road).some(road => curRoadKeys.includes(normalizeRoadKey(road)));
+    }
+
+    // Which existing segment entry of `metaId` does the current location belong to?
+    //   1. one that already has A or B at this exact position;
+    //   2. one that already has A and B and whose rectangle contains the position
+    //      (the link then only adds the road to its list);
+    //   3. the nearest one that has no B yet: the position becomes its point B (whatever
+    //      the road or the distance: the second link of a stretch is its other end).
+    // null when there is none: a new stretch is started with the position as point A.
+    function findSegmentLinkKey(locations, metaId) {
+        const curLat = normalizeCoordinate(currentLocationData.lat);
+        const curLng = normalizeCoordinate(currentLocationData.lng);
+        if (curLat === null || curLng === null) return null;
+
+        const candidates = Object.entries(locations || {}).filter(([, entry]) =>
+            entry && typeof entry === 'object' && !Array.isArray(entry) && entry.segment &&
+            getLocationMetaIds(entry).includes(metaId) && entryMatchesCurrentCountry(entry));
+
+        const exact = candidates.find(([, entry]) =>
+            (isSameCoordinate(entry.lat, curLat) && isSameCoordinate(entry.lng, curLng)) ||
+            (isSameCoordinate(entry.latB, curLat) && isSameCoordinate(entry.lngB, curLng)));
+        if (exact) return exact[0];
+
+        const containing = candidates.find(([, entry]) => hasSegmentPointB(entry) &&
+            normalizeCoordinate(entry.lat) !== null && normalizeCoordinate(entry.lng) !== null &&
+            isInsideSegment(curLat, curLng, [
+                { lat: normalizeCoordinate(entry.lat), lng: normalizeCoordinate(entry.lng) },
+                { lat: normalizeCoordinate(entry.latB), lng: normalizeCoordinate(entry.lngB) }
+            ]));
+        if (containing) return containing[0];
+
+        let bestKey = null;
+        let bestDistance = Infinity;
+        candidates.forEach(([key, entry]) => {
+            if (hasSegmentPointB(entry)) return;
+            const lat = normalizeCoordinate(entry.lat);
+            const lng = normalizeCoordinate(entry.lng);
+            if (lat === null || lng === null) return;
+            const distance = getHaversineDistance(lat, lng, curLat, curLng);
+            if (distance < bestDistance) {
+                bestKey = key;
+                bestDistance = distance;
+            }
+        });
+        return bestKey;
+    }
+
+    // Writes the current location into a segment entry: its road joins the list when the
+    // list does not cover it yet, and the position becomes point B when B is still empty
+    // (a new entry has the position as point A, so B stays empty). `currentRoads` is the
+    // road list of the current location (see getLocationSnapshotForScope).
+    function applyCurrentLocationToSegmentEntry(entry, currentRoads) {
+        entry.segment = true;
+        const roads = getSegmentRoadList(entry.road);
+        if (!segmentRoadsCoverCurrentLocation({ road: roads })) roads.push(...getSegmentRoadList(currentRoads));
+        entry.road = getSegmentRoadList(roads);
+
+        if (!hasSegmentPointB(entry)) {
+            const atPointA = isSameCoordinate(entry.lat, currentLocationData.lat) &&
+                isSameCoordinate(entry.lng, currentLocationData.lng);
+            const curLat = normalizeCoordinate(currentLocationData.lat);
+            const curLng = normalizeCoordinate(currentLocationData.lng);
+            const canSetB = !atPointA && curLat !== null && curLng !== null;
+            entry.latB = canSetB ? curLat : null;
+            entry.lngB = canSetB ? curLng : null;
+        }
+    }
+
+    // A pending (not yet confirmed) segment entry is confirmed once the saved file has its
+    // point B (when it has one) and every road of its list.
+    function isSegmentGeometryConfirmed(rawEntry, pendingEntry) {
+        if (!pendingEntry || Array.isArray(pendingEntry) || !pendingEntry.segment) return true;
+        if (!rawEntry || Array.isArray(rawEntry)) return false;
+        if (hasSegmentPointB(pendingEntry) &&
+            !(isSameCoordinate(rawEntry.latB, pendingEntry.latB) && isSameCoordinate(rawEntry.lngB, pendingEntry.lngB))) {
+            return false;
+        }
+        const rawRoads = getSegmentRoadList(rawEntry.road).map(normalizeRoadKey);
+        return getSegmentRoadList(pendingEntry.road).every(road => rawRoads.includes(normalizeRoadKey(road)));
+    }
+
+    // One indexed stretch per segment entry and meta: its roads and its corner(s).
+    // Without point B the stretch is a single point (a circle, see isInsideSegment).
+    function buildSegmentIndex(entries) {
+        const segments = [];
+        entries.forEach(({ metaIds, lat, lng, latB, lngB, country, roads, segment }) => {
+            if (!segment || lat === null || lng === null) return;
+            const roadKeys = Array.from(new Set((roads || []).map(normalizeRoadKey).filter(Boolean)));
+            if (roadKeys.length === 0) return;
+            const points = [{ lat, lng }];
+            if (latB !== null && latB !== undefined && lngB !== null && lngB !== undefined) {
+                points.push({ lat: latB, lng: lngB });
+            }
+            metaIds.forEach(id => segments.push({ metaId: id, roads: roadKeys, country, points }));
+        });
+        return segments;
     }
 
     function rebuildProximityIndexes() {
@@ -1106,6 +1244,8 @@
                 metaIds: getLocationMetaIds(entry),
                 lat,
                 lng,
+                latB: normalizeCoordinate(entry.latB),
+                lngB: normalizeCoordinate(entry.lngB),
                 country,
                 region: entry.region,
                 city: entry.city,
@@ -3856,10 +3996,17 @@
         }
 
         if (normalizeScope(location.scope) === 'segment') {
-            const lat = normalizeCoordinate(location.lat);
-            const lng = normalizeCoordinate(location.lng);
-            const point = lat !== null && lng !== null ? ` ${lat.toFixed(6)} ${lng.toFixed(6)}` : '';
-            return `${location.displayCountry || 'Unknown country'}, ${formatLocationValue(location.road)} (segment${point})`;
+            const formatPoint = (latValue, lngValue) => {
+                const lat = normalizeCoordinate(latValue);
+                const lng = normalizeCoordinate(lngValue);
+                return lat !== null && lng !== null ? `${lat.toFixed(6)} ${lng.toFixed(6)}` : '';
+            };
+            const points = [
+                formatPoint(location.lat, location.lng),
+                formatPoint(location.latB, location.lngB)
+            ].filter(Boolean).join(' \u2192 ');
+            const roads = getSegmentRoadList(location.road).join(' / ');
+            return `${location.displayCountry || 'Unknown country'}, ${roads} (segment${points ? ' ' + points : ''})`;
         }
 
         const parts = [
@@ -4085,12 +4232,16 @@
 
         Object.keys(pending.locations).forEach(panoid => {
             const rawMetaIdsForLocation = new Set(getLocationMetaIds(rawUserLocations[panoid]));
-            const pendingMetaIds = getLocationMetaIds(pending.locations[panoid]).filter(id => !rawMetaIdsForLocation.has(id));
+            const allPendingMetaIds = getLocationMetaIds(pending.locations[panoid]);
+            const pendingMetaIds = allPendingMetaIds.filter(id => !rawMetaIdsForLocation.has(id));
+            // A segment already saved without its point B / last road is still pending.
+            const geometryPending = !isSegmentGeometryConfirmed(rawUserLocations[panoid], pending.locations[panoid]);
 
-            if (pendingMetaIds.length > 0) {
+            if (pendingMetaIds.length > 0 || geometryPending) {
+                const keptMetaIds = pendingMetaIds.length > 0 ? pendingMetaIds : allPendingMetaIds;
                 const pendingEntry = Array.isArray(pending.locations[panoid])
-                    ? { metas: pendingMetaIds }
-                    : { ...pending.locations[panoid], metas: pendingMetaIds };
+                    ? { metas: keptMetaIds }
+                    : { ...pending.locations[panoid], metas: keptMetaIds };
                 pruned.locations[panoid] = pendingEntry;
             }
         });
@@ -4108,6 +4259,14 @@
             if (!liveEntry) return;
             const pendingEntry = pending.locations[key] || { ...normalizeLocationEntry(liveEntry), metas: [] };
             pendingEntry.metas = Array.from(new Set([...getLocationMetaIds(pendingEntry), metaId]));
+            // A segment entry changes after its creation (point B, more roads): the pending
+            // copy follows the live entry.
+            if (liveEntry.segment) {
+                pendingEntry.segment = true;
+                pendingEntry.road = liveEntry.road;
+                pendingEntry.latB = liveEntry.latB;
+                pendingEntry.lngB = liveEntry.lngB;
+            }
             pending.locations[key] = pendingEntry;
         });
     }
@@ -6618,12 +6777,12 @@
             });
         });
 
-        // Segments: on the same road (name or ref) and inside the corridor of the stretch.
+        // Segments: on one of the roads of the stretch (name or ref) and inside its rectangle.
         if (curRoadKeys.length > 0) {
             indexedSegments.forEach(seg => {
                 if (matchedMetaIds.has(seg.metaId)) return;
                 if (seg.country !== curCountry && seg.country !== curNomCountry) return;
-                if (!curRoadKeys.includes(seg.road)) return;
+                if (!seg.roads.some(road => curRoadKeys.includes(road))) return;
                 const meta = getMetaById(seg.metaId);
                 if (!meta || normalizeScope(meta.scope) !== 'segment') return;
                 if (isInsideSegment(curLat, curLng, seg.points)) {

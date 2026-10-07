@@ -41734,56 +41734,38 @@
     "city": "Salinas",
     "road": null
   },
-  "3KL0H_iEcBWQc-WF8YA_zg": {
-    "metas": [
-      "ecuador_1791112515337_e8141"
-    ],
-    "lat": -0.46377,
-    "lng": -78.59314,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "E20",
-    "segment": true
-  },
-  "VTAVQ7NAOvNCTi4Xw8fiKw": {
-    "metas": [
-      "ecuador_1791112515337_e8141"
-    ],
-    "lat": 0.27947,
-    "lng": -79.44549,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "E20",
-    "segment": true
-  },
-  "Qla4pf3OXlPjKdPZb4xftQ": {
+  "CAoSFkNJSE0wb2dLRUlDQWdJRG0xc08zVnc.": {
     "metas": [
       "ecuador_1789901459193_0gb32"
     ],
-    "lat": -2.15137,
-    "lng": -80.77834,
+    "lat": -2.06234,
+    "lng": -80.73641,
     "country": "Ecuador",
     "nominatimCountry": "Ecuador",
     "region": null,
     "city": null,
-    "road": "E40",
-    "segment": true
-  },
-  "CAoSFkNJSE0wb2dLRUlDQWdJRGw5ZEs4V1E.": {
-    "metas": [
-      "ecuador_1789901459193_0gb32"
+    "road": [
+      "E40"
     ],
-    "lat": -2.73869,
-    "lng": -79.90983,
+    "segment": true,
+    "latB": -2.73869,
+    "lngB": -79.90983
+  },
+  "CAoSFkNJSE0wb2dLRUlDQWdJRHFqWVhGYWc.": {
+    "metas": [
+      "ecuador_1791112515337_e8141"
+    ],
+    "lat": 0.40389,
+    "lng": -79.48909,
     "country": "Ecuador",
     "nominatimCountry": "Ecuador",
     "region": null,
     "city": null,
-    "road": "E40",
-    "segment": true
+    "road": [
+      "E20"
+    ],
+    "segment": true,
+    "latB": -0.53932,
+    "lngB": -78.55348
   }
 }
