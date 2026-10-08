@@ -4,8 +4,6 @@
 // @version      0.13
 // @description  Displays crowdsourced metas and hints for Geoguessr locations.
 // @author       Lukas Hzb
-// @updateURL    https://github.com/lukas-hzb/better_metas/raw/refs/heads/main_v4/geoguessr-meta.user.js
-// @downloadURL  https://github.com/lukas-hzb/better_metas/raw/refs/heads/main_v4/geoguessr-meta.user.js
 // @match        https://www.geoguessr.com/*
 // @icon         https://www.google.com/s2/favicons?sz=64&domain=geoguessr.com
 // @run-at       document-start
@@ -42,8 +40,6 @@
     const DATA_CACHE_VERSION = 'local:7';
     const ACTIVE_SCOPES_STORAGE_KEY = 'gg_active_scopes';
     const ACTIVE_TAGS_STORAGE_KEY = 'gg_active_tags';
-    const DEFAULT_HUD_WIDTH = '320px';
-    const DEFAULT_HUD_HEIGHT = '75.6vh';
     const HUD_MIN_WIDTH = 260;
     const HUD_MIN_HEIGHT = 220;
     const DATA_REFRESH_AFTER_SAVE_MS = 2500;
@@ -57,6 +53,8 @@
     const RESULT_SCREEN_GRACE_MS = 500;
     const QUEUED_PANO_FORCE_MS = 2000;
     const VISIBILITY_POLL_INTERVAL_MS = 200;
+    const HOOK_POLL_MIN_DELAY_MS = 25;
+    const HOOK_POLL_MAX_DELAY_MS = 1000;
     const MISSING_PANOID_PLACEHOLDER = "YOUR_PANOID_HERE";
     const META_SAVE_BUTTON_LABEL = 'Save Meta';
     const SEARCH_DEBOUNCE_MS = 120;
@@ -224,11 +222,18 @@
         return known;
     }
 
+    // "E20", "N7", "SP 12", "A-1": a bare road code.
+    const ROAD_CODE_RE = /^[a-z]{0,3}[\s-]?\d{1,4}[a-z]?$/i;
+
+    function isRoadCode(value) {
+        return ROAD_CODE_RE.test(String(value || '').trim());
+    }
+
     function isRoadRefLike(name, knownRefs) {
         const k = normalizeRoadKey(name);
         if (!k) return false;
         if (knownRefs && knownRefs.has(k)) return true;
-        return /^[a-z]{0,3}[\s-]?\d{1,4}[a-z]?$/.test(k);
+        return isRoadCode(k);
     }
 
     function pickRoadName(source, knownRefs) {
@@ -261,7 +266,7 @@
             ...(((roadSources && roadSources.nominatim) || {}).refs || []),
             ...(((roadSources && roadSources.google) || {}).refs || [])
         ].map(r => String(r || '').trim()).filter(Boolean);
-        return refs.find(r => /^[a-z]{0,3}[\s-]?\d{1,4}[a-z]?$/i.test(r)) || refs[0] || chooseRoad(roadSources);
+        return refs.find(isRoadCode) || refs[0] || chooseRoad(roadSources);
     }
 
     // Roads identifying the current location for the "road" scope: the highway code (E20)
@@ -354,7 +359,7 @@
             const done = currentLocationData.geocodeDone || {};
             const sources = currentLocationData.roadSources;
             const googleRefs = ((sources && sources.google && sources.google.refs) || []);
-            const googleHasRef = googleRefs.some(r => /^[a-z]{0,3}[\s-]?\d{1,4}[a-z]?$/i.test(String(r || '').trim()));
+            const googleHasRef = googleRefs.some(isRoadCode);
             if ((done.google && done.nominatim) || (done.google && googleHasRef)) return true;
             if (Date.now() >= deadline) return false;
             if (!announced) {
@@ -383,18 +388,6 @@
         const baseData = Array.isArray(baseEntry) ? { metas: baseEntryMetaIds } : { ...baseEntry };
         const overrideData = Array.isArray(overrideEntry) ? { metas: overrideEntryMetaIds } : { ...overrideEntry };
         return normalizeLocationEntry({ ...baseData, ...overrideData, metas: mergedMetaIds });
-    }
-
-    function getCombinedLocationEntry(panoid) {
-        return userLocationMap[panoid] || null;
-    }
-
-    function forEachCombinedLocationEntry(callback) {
-        Object.entries(userLocationMap).forEach(([panoid, entry]) => callback(panoid, entry));
-    }
-
-    function getCombinedLocationCount() {
-        return Object.keys(userLocationMap).length;
     }
 
     function ensureLocationEntry(locations, panoid) {
@@ -432,7 +425,7 @@
     // Two names are "the same" when both are empty or when they match (accent/case-insensitive).
     function isSameNullableName(a, b) {
         if (!a && !b) return true;
-        return isFuzzyNameMatch(a, b);
+        return isSameName(a, b);
     }
 
     // Does this location entry have EXACTLY the shape required by `scope` for the
@@ -469,7 +462,7 @@
         if (normalizedScope === 'road') {
             const curRoads = getRoadScopeNames();
             return !entry.region && !entry.city && hasRoad && curRoads.length > 0 &&
-                curRoads.some(cr => entryRoads.some(er => isFuzzyNameMatch(cr, er)));
+                curRoads.some(cr => entryRoads.some(er => isSameName(cr, er)));
         }
         // countrywide, 100km, 10km, 1km, unique
         return !entry.region && !entry.city && !hasRoad;
@@ -508,6 +501,26 @@
         return key.startsWith(panoid + '__') && SCOPED_KEY_SUFFIX_RE.test(key.slice(panoid.length + 2));
     }
 
+    // panoid -> its location keys ("<panoid>" and "<panoid>__<scope>[_n]"), same rule
+    // as isOwnLocationKey.
+    const SCOPED_KEY_RE = /^(.+)__(?:countrywide|region|city|road|segment|100km|10km|1km|unique)(?:_\d+)?$/;
+    let panoidKeyIndex = new Map();
+
+    function buildPanoidKeyIndex(locations) {
+        const index = new Map();
+        const add = (panoid, key) => {
+            const keys = index.get(panoid);
+            if (keys) keys.push(key);
+            else index.set(panoid, [key]);
+        };
+        Object.keys(locations).forEach(key => {
+            add(key, key);
+            const scoped = SCOPED_KEY_RE.exec(key);
+            if (scoped) add(scoped[1], key);
+        });
+        return index;
+    }
+
     function getOwnLocationKeys(locations, panoid) {
         if (!locations || !panoid) return [];
         return Object.keys(locations).filter(key => isOwnLocationKey(key, panoid));
@@ -517,7 +530,17 @@
     // "<panoid>__<scope>" entries created for it.
     function getLinkedMetaIdsForPanoid(locations, panoid) {
         const ids = new Set();
-        getOwnLocationKeys(locations, panoid).forEach(key => {
+        // Display paths read the live map through the per-panoid key index instead of
+        // scanning every key. The index shares the proximity indexes' invalidation
+        // (proximityIndexDirty, set after every change of userLocationMap).
+        let keys;
+        if (panoid && locations === userLocationMap) {
+            if (proximityIndexDirty) rebuildProximityIndexes();
+            keys = panoidKeyIndex.get(panoid) || [];
+        } else {
+            keys = getOwnLocationKeys(locations, panoid);
+        }
+        keys.forEach(key => {
             getLocationMetaIds(locations[key]).forEach(id => ids.add(id));
         });
         return ids;
@@ -590,7 +613,7 @@
                 if ('city' in scopedSnapshot && !entry.city) entry.city = scopedSnapshot.city;
                 if (scopedSnapshot.segment) {
                     applyCurrentLocationToSegmentEntry(entry, scopedSnapshot.road);
-                    console.log('[BetterMetas] Segment link:', {
+                    debugLog('[BetterMetas] Segment link:', {
                         meta: id,
                         key: targetKey,
                         pointA: [entry.lat, entry.lng],
@@ -1142,9 +1165,9 @@
     //   1. one that already has A or B at this exact position;
     //   2. one that already has A and B and whose rectangle contains the position
     //      (the link then only adds the road to its list);
-    //   3. the nearest one that has no B yet: the position becomes its point B (whatever
-    //      the road or the distance: the second link of a stretch is its other end).
-    // null when there is none: a new stretch is started with the position as point A.
+    //   3. otherwise the nearest one that has no B yet: the position becomes its point B.
+    // null when there is none (position outside every complete rectangle): a new stretch
+    // starts with the position as point A.
     function findSegmentLinkKey(locations, metaId) {
         const curLat = normalizeCoordinate(currentLocationData.lat);
         const curLng = normalizeCoordinate(currentLocationData.lng);
@@ -1167,6 +1190,8 @@
             ]));
         if (containing) return containing[0];
 
+        // Outside every complete rectangle: the nearest stretch without B gets the position
+        // as point B; when there is none, null makes the caller start a new stretch.
         let bestKey = null;
         let bestDistance = Infinity;
         candidates.forEach(([key, entry]) => {
@@ -1236,7 +1261,8 @@
 
     function rebuildProximityIndexes() {
         indexedLocationEntries = [];
-        forEachCombinedLocationEntry((panoid, entry) => {
+        panoidKeyIndex = buildPanoidKeyIndex(userLocationMap);
+        Object.values(userLocationMap).forEach(entry => {
             const lat = normalizeCoordinate(entry.lat);
             const lng = normalizeCoordinate(entry.lng);
             const country = normalizeCountry(entry.nominatimCountry || entry.country, lat, lng);
@@ -1247,9 +1273,10 @@
                 latB: normalizeCoordinate(entry.latB),
                 lngB: normalizeCoordinate(entry.lngB),
                 country,
-                region: entry.region,
-                city: entry.city,
+                regionKey: normalizeNameForMatch(entry.region),
+                cityKey: normalizeNameForMatch(entry.city),
                 roads: getNormalizedRoadNames(entry.road),
+                roadKeys: getNormalizedRoadNames(entry.road).map(normalizeNameForMatch).filter(Boolean),
                 segment: !!entry.segment
             });
         });
@@ -1271,26 +1298,41 @@
         };
     }
 
+    // All persistent values (settings, HUD geometry, pending changes, caches) go
+    // through these three helpers, backed by GM storage. Values written by older
+    // versions in localStorage are moved to GM storage the first time they are read.
     function readStoredValue(key, defaultValue = null) {
-        if (typeof GM_getValue === 'function') {
-            return GM_getValue(key, defaultValue);
+        try {
+            const value = GM_getValue(key, null);
+            if (value !== null && value !== undefined) return value;
+
+            const legacy = localStorage.getItem(key);
+            if (legacy !== null) {
+                GM_setValue(key, legacy);
+                localStorage.removeItem(key);
+                return legacy;
+            }
+        } catch (err) {
+            console.warn(`[BetterMetas] Could not read stored value "${key}":`, err);
         }
-        return localStorage.getItem(key) ?? defaultValue;
+        return defaultValue;
     }
 
     function writeStoredValue(key, value) {
-        if (typeof GM_setValue === 'function') {
+        try {
             GM_setValue(key, value);
-            return;
+        } catch (err) {
+            console.warn(`[BetterMetas] Could not save stored value "${key}":`, err);
         }
-        localStorage.setItem(key, value);
     }
 
     function clearStoredValue(key) {
-        if (typeof GM_setValue === 'function') {
+        try {
             GM_setValue(key, null);
+            localStorage.removeItem(key);
+        } catch (err) {
+            console.warn(`[BetterMetas] Could not clear stored value "${key}":`, err);
         }
-        localStorage.removeItem(key);
     }
 
     function loadCachedDataSnapshot() {
@@ -1305,7 +1347,14 @@
                 clearStoredValue(DATA_CACHE_STORAGE_KEY);
                 return null;
             }
-            return normalizeDataSnapshot(cached);
+            // Saved already normalized (see fetchLocationData) and tied to
+            // DATA_CACHE_VERSION, so it is not normalized a second time.
+            if (!Array.isArray(cached.userMetas) || !cached.userLocationMap ||
+                typeof cached.userLocationMap !== 'object' || Array.isArray(cached.userLocationMap)) {
+                clearStoredValue(DATA_CACHE_STORAGE_KEY);
+                return null;
+            }
+            return { userLocationMap: cached.userLocationMap, userMetas: cached.userMetas };
         } catch (err) {
             console.warn('[BetterMetas] Invalid cached data snapshot:', err);
             clearStoredValue(DATA_CACHE_STORAGE_KEY);
@@ -1333,7 +1382,7 @@
         if (!cached) return false;
 
         applyDataSnapshot(cached, { alreadyNormalized: true });
-        console.log(`[BetterMetas] Loaded cached DB: ${getCombinedLocationCount()} locs, ${metasData.length} metas.`);
+        debugLog(`[BetterMetas] Loaded cached DB: ${Object.keys(userLocationMap).length} locs, ${metasData.length} metas.`);
         if (currentPanoid) {
             updateStatus(`ID: ${currentPanoid.substring(0,12)}...`);
             refreshDisplay();
@@ -1453,14 +1502,16 @@
         }).join('');
     }
 
+    const HTML_ESCAPES = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;'
+    };
+
     function escapeHtml(value) {
-        return String(value ?? '').replace(/[&<>"']/g, (char) => ({
-            '&': '&amp;',
-            '<': '&lt;',
-            '>': '&gt;',
-            '"': '&quot;',
-            "'": '&#39;'
-        }[char]));
+        return String(value ?? '').replace(/[&<>"']/g, char => HTML_ESCAPES[char]);
     }
 
     // Discord-like inline formatting for meta descriptions.
@@ -1491,6 +1542,7 @@
     function formatMetaDescription(value) {
         const format = (source) => {
             let html = '';
+            let plainText = ''; // run of plain characters, escaped once when it ends
             let i = 0;
             while (i < source.length) {
                 const delimiter = META_FORMAT_DELIMITERS.find(d => source.startsWith(d.marker, i));
@@ -1507,16 +1559,18 @@
                     if (first && !/\s/.test(first) && first !== delimiter.char && previous !== delimiter.char && !isFootnoteStar) {
                         const end = findClosingFormatMarker(source, delimiter, contentStart + 1);
                         if (end !== -1) {
+                            html += escapeHtml(plainText);
+                            plainText = '';
                             html += `<${delimiter.tag}>${format(source.slice(contentStart, end))}</${delimiter.tag}>`;
                             i = end + delimiter.marker.length;
                             continue;
                         }
                     }
                 }
-                html += escapeHtml(source[i]);
+                plainText += source[i];
                 i += 1;
             }
-            return html;
+            return html + escapeHtml(plainText);
         };
         return format(String(value ?? ''));
     }
@@ -1567,7 +1621,11 @@
     // to download the image ourselves and hand the <img> a local blob: URL
     // instead. This works regardless of where the image is actually hosted
     // (plonkit, Discord CDN, imgur, etc.).
-    const imageBlobCache = new Map(); // url -> Promise<Blob|null>
+    // LRU cache url -> Promise<Blob|null>: a Map iterates in insertion order, so the
+    // first key is the least recently used. Capped so a long session cannot keep
+    // every downloaded image in memory.
+    const IMAGE_CACHE_MAX_ENTRIES = 100;
+    const imageBlobCache = new Map();
     const IMAGE_FETCH_TIMEOUT_MS = 30000;
 
     function getImageRequestHeaders(url) {
@@ -1583,7 +1641,13 @@
     }
 
     function fetchImageBlob(url) {
-        if (imageBlobCache.has(url)) return imageBlobCache.get(url);
+        if (imageBlobCache.has(url)) {
+            // Hit: move the entry to the most recently used position.
+            const cached = imageBlobCache.get(url);
+            imageBlobCache.delete(url);
+            imageBlobCache.set(url, cached);
+            return cached;
+        }
 
         const promise = new Promise(resolve => {
             // Failures are logged unconditionally (not behind DEBUG_LOGGING):
@@ -1624,6 +1688,14 @@
         });
 
         imageBlobCache.set(url, promise);
+        while (imageBlobCache.size > IMAGE_CACHE_MAX_ENTRIES) {
+            imageBlobCache.delete(imageBlobCache.keys().next().value);
+        }
+        // A failure that happens synchronously is reported before the entry above
+        // exists: drop failed downloads here too so a later hover can retry.
+        promise.then(blob => {
+            if (blob === null && imageBlobCache.get(url) === promise) imageBlobCache.delete(url);
+        });
         return promise;
     }
 
@@ -1692,6 +1764,15 @@
             console.warn('[BetterMetas] Image delete failed:', imgErr);
             await showToolAlert('Image Not Deleted', `The meta change went through, but the unused image ${imagePath} could not be removed from disk (${imgErr.message}).`);
         }
+    }
+
+    // Undoes an image import after a failed save: deletes the file unless a loaded
+    // meta still points to it (e.g. the import overwrote an image other metas use).
+    async function removeImageIfUnused(imagePath) {
+        const path = String(imagePath || '').trim();
+        if (!isLocalImagePath(path)) return;
+        if (metasData.some(meta => String(meta.imageUrl || '').trim() === path)) return;
+        await removeLocalImage(path);
     }
 
     // ---- Image compression (applied when an image is imported) -------------------
@@ -2032,7 +2113,7 @@
 
     function loadActiveScopes() {
         try {
-            const storedScopes = JSON.parse(localStorage.getItem(ACTIVE_SCOPES_STORAGE_KEY) || 'null');
+            const storedScopes = JSON.parse(readStoredValue(ACTIVE_SCOPES_STORAGE_KEY) || 'null');
             if (Array.isArray(storedScopes)) {
                 const knownScopes = storedScopes
                     .map(scope => normalizeScope(scope, null))
@@ -2051,7 +2132,7 @@
     // filter is an EMPTY set, which also means "show all" (see isTagActive).
     function loadActiveTags() {
         try {
-            const storedTags = JSON.parse(localStorage.getItem(ACTIVE_TAGS_STORAGE_KEY) || 'null');
+            const storedTags = JSON.parse(readStoredValue(ACTIVE_TAGS_STORAGE_KEY) || 'null');
             if (Array.isArray(storedTags)) {
                 const knownTags = storedTags.filter(tag => TAG_PRESETS.includes(tag));
                 return new Set(knownTags);
@@ -2064,1625 +2145,63 @@
 
 
 
+
     // --- Styles ---
-    const STYLES = `
-        #gg-meta-hud {
-            --gg-meta-divider-gap: 12px;
-            --gg-meta-content-status-gap: 8px;
-
-            position: fixed;
-            top: 0.5rem; /* Below the top bar */
-            left: 0.5rem; /* Aligned to left */
-            right: auto;
-            transform: none;
-
-            width: ${DEFAULT_HUD_WIDTH};
-
-            /* Window Dimensions */
-            height: ${DEFAULT_HUD_HEIGHT};
-            max-height: 80vh;
-            display: flex;
-            flex-direction: column;
-
-            background:
-                radial-gradient(circle at 12% -12%, rgba(121, 80, 229, 0.12), transparent 42%),
-                radial-gradient(circle at 100% 112%, rgba(0, 162, 254, 0.07), transparent 44%),
-                rgba(4, 3, 14, 0.86);
-            color: #fff;
-            padding: 12px 16px;
-            border-radius: 16px;
-
-            z-index: 99999;
-            font-family: inherit !important;
-            font-weight: 700;
-
-            border: 1px solid rgba(175, 165, 225, 0.16);
-            /* display: flex controlled via opacity now */
-            display: flex;
-            flex-direction: column;
-
-            /* Initial State: Hidden */
-            opacity: 0;
-            pointer-events: none;
-            transform: translateY(10px); /* Slide up effect */
-            transition: opacity 0.3s cubic-bezier(0.2, 0, 0, 1), transform 0.3s cubic-bezier(0.2, 0, 0, 1);
-
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 8px 24px rgba(0,0,0,0.2);
-            text-shadow: 0 1px 4px rgba(0,0,0,0.9);
-
-            /* Custom Scrollbar for sleek look */
-            scrollbar-width: thin;
-            scrollbar-color: rgba(255,255,255,0.3) transparent;
-        }
-
-        #gg-meta-hud.gg-visible {
-            opacity: 1;
-            pointer-events: auto;
-            transform: translateY(0);
-        }
-
-        .gg-normal-controls {
-            display: flex;
-            align-items: center;
-        }
-
-        .gg-resize-grip {
-            position: absolute;
-            right: 4px;
-            bottom: 4px;
-            z-index: 6;
-            width: 18px;
-            height: 18px;
-            display: flex;
-            align-items: flex-end;
-            justify-content: flex-end;
-            padding: 4px;
-            box-sizing: content-box;
-            color: rgba(255, 255, 255, 0.45);
-            cursor: nwse-resize;
-            touch-action: none;
-            transition: color 0.15s;
-        }
-
-        .gg-resize-grip:hover {
-            color: rgba(255, 255, 255, 0.85);
-        }
-
-        .gg-resize-grip svg {
-            display: block;
-            pointer-events: none;
-        }
-
-        #gg-meta-add-btn,
-        #gg-meta-admin-btn,
-        #gg-settings-btn {
-            background: rgba(255, 255, 255, 0.2);
-            color: #fff;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 20px;
-            cursor: pointer;
-            font-size: 0.75rem;
-            font-weight: 600;
-            line-height: 1;
-            padding: calc(4px - var(--gg-text-optical-shift)) 12px calc(4px + var(--gg-text-optical-shift));
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: background 0.2s, color 0.2s, border-color 0.2s;
-        }
-
-        #gg-meta-admin-btn,
-        #gg-settings-btn {
-            padding: 4px 8px;
-        }
-
-        #gg-meta-admin-btn svg,
-        #gg-settings-btn svg,
-        .gg-modal-back-btn svg {
-            display: block;
-            flex-shrink: 0;
-        }
-
-        #gg-meta-add-btn:hover,
-        #gg-meta-admin-btn:hover,
-        #gg-settings-btn:hover {
-            background: rgba(255, 255, 255, 0.4);
-            color: #fff;
-        }
-
-        /* Main HUD controls stay visually quiet so the metas remain dominant. */
-        #gg-meta-admin-btn:hover,
-        #gg-meta-add-btn:hover,
-        #gg-settings-btn:hover {
-            background: rgba(255, 255, 255, 0.3);
-            border-color: rgba(255, 255, 255, 0.22);
-        }
-
-        #gg-meta-admin-btn:focus-visible,
-        #gg-meta-add-btn:focus-visible,
-        #gg-settings-btn:focus-visible {
-            outline: none;
-        }
-
-        #gg-meta-admin-btn:focus-visible,
-        #gg-meta-add-btn:focus-visible,
-        #gg-settings-btn:focus-visible {
-            box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.24);
-        }
-
-        #gg-meta-admin-btn:active,
-        #gg-meta-add-btn:active,
-        #gg-settings-btn:active {
-            transform: translateY(1px);
-        }
-
-        #gg-meta-hud * {
-            font-family: inherit !important;
-            font-weight: inherit;
-        }
-        /* Hover effect removed */
-        .gg-meta-title {
-            font-weight: 800;
-            color: #fff; /* White title like compass directions */
-            margin-bottom: var(--gg-meta-divider-gap);
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            font-size: 0.95rem;
-            /* text-transform: uppercase; Removed to allow BetterMetas mixed case */
-            letter-spacing: 0.05em;
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-            padding-bottom: var(--gg-meta-divider-gap);
-            cursor: move;
-            touch-action: none;
-        }
-
-        #gg-meta-hud.gg-dragging {
-            transition: none;
-        }
-        .gg-meta-content {
-            font-size: 0.9rem;
-            min-height: 40px;
-            flex: 1;
-            overflow-y: auto;
-            margin-bottom: var(--gg-meta-content-status-gap); /* Spacing above status */
-        }
-        #gg-meta-container {
-            scrollbar-width: none;
-            -ms-overflow-style: none;
-        }
-        #gg-meta-container::-webkit-scrollbar {
-            display: none;
-            width: 0;
-            height: 0;
-        }
-        .gg-meta-tag, .gg-tag-pill {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            background: rgba(255, 255, 255, 0.2);
-            color: #fff;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 0.75rem;
-            margin-right: 4px;
-            margin-bottom: 4px;
-            font-weight: 600;
-            line-height: 1;
-        }
-
-        .gg-tag-pill {
-            cursor: pointer;
-            background: rgba(255, 255, 255, 0.055);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: rgba(255, 255, 255, 0.58);
-            transition: background 0.2s, border-color 0.2s, color 0.2s, box-shadow 0.2s;
-        }
-
-        .gg-tag-pill:hover {
-            background: rgba(255, 255, 255, 0.1);
-            border-color: rgba(255, 255, 255, 0.24);
-            color: rgba(255, 255, 255, 0.82);
-        }
-
-        .gg-tag-pill.gg-tag-selected {
-            background: var(--gg-tag-grey-active);
-            color: #fff;
-            border-color: rgba(255, 255, 255, 0.48);
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.24);
-        }
-
-        .gg-tag-pill.gg-tag-selected:hover {
-            background: rgba(255, 255, 255, 0.24);
-            color: #fff;
-        }
-
-        .gg-scope-pill {
-            background: rgba(255, 255, 255, 0.055);
-            border-color: rgba(255, 255, 255, 0.12);
-            color: rgba(255, 255, 255, 0.58);
-        }
-
-        .gg-scope-pill:hover {
-            background: rgba(255, 255, 255, 0.1);
-            border-color: rgba(255, 255, 255, 0.24);
-            color: rgba(255, 255, 255, 0.82);
-        }
-
-        .gg-scope-pill.gg-tag-selected {
-            background: rgba(96, 165, 250, 0.24);
-            border-color: rgba(147, 197, 253, 0.62);
-            color: #e8f3ff;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.24);
-        }
-
-        .gg-scope-pill.gg-tag-selected:hover {
-            background: rgba(96, 165, 250, 0.3);
-            color: #fff;
-        }
-
-        .gg-tag-static {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--gg-tag-grey);
-            color: #fff;
-            padding: 1px 6px;
-            border-radius: 12px;
-            font-size: 0.65rem;
-            margin-right: 6px;
-            font-weight: 600;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            cursor: default;
-            white-space: nowrap;
-            line-height: 1;
-        }
-
-        .gg-meta-tags {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin-top: 4px;
-            margin-left: 1px;
-        }
-
-        .gg-meta-tags .gg-tag-static {
-            margin-right: 0;
-        }
-
-        .gg-meta-row {
-            margin-bottom: var(--gg-meta-divider-gap);
-            padding-bottom: var(--gg-meta-divider-gap);
-            border-bottom: 1px solid rgba(255,255,255,0.1);
-        }
-
-        .gg-meta-row-predicted {
-            border-left: 2px solid rgba(255,255,255,0.2);
-            padding-left: 10px;
-            margin-left: -12px;
-        }
-
-        .gg-meta-item-title {
-            display: flex;
-            align-items: center;
-            flex-wrap: wrap;
-            column-gap: 8px;
-            row-gap: 4px;
-            font-size: 1.1rem;
-            font-weight: 800;
-            color: #fff;
-            margin-bottom: 6px;
-            line-height: 1.3;
-        }
-
-        .gg-clickable-meta-title {
-            cursor: pointer;
-        }
-
-        .gg-empty-state {
-            color: #ccc;
-            font-style: italic;
-        }
-
-        .gg-muted-empty-state {
-            opacity: 0.6;
-            font-style: italic;
-        }
-
-        #gg-meta-hud .gg-meta-description {
-            font-size: 0.75rem;
-            color: rgba(255, 255, 255, 0.8);
-            margin-bottom: 8px;
-            line-height: 1.4;
-            font-weight: 400 !important;
-            font-family: inherit;
-            white-space: pre-line; /* keep line breaks from the description */
-        }
-        #gg-meta-hud .gg-meta-description strong,
-        #gg-meta-preview-popup .gg-meta-description strong {
-            font-weight: 700 !important;
-            color: #fff;
-        }
-        #gg-meta-hud .gg-meta-description em,
-        #gg-meta-preview-popup .gg-meta-description em {
-            font-style: italic;
-        }
-        .gg-meta-image {
-            max-width: 100%;
-            height: auto;
-            max-height: 25vh;
-            border-radius: 8px;
-            margin-bottom: 8px;
-            display: block;
-        }
-        .gg-meta-image[data-gg-src] {
-            width: 100%;
-            min-height: 1px;
-        }
-        #gg-meta-hud .gg-meta-image,
-        #gg-existing-metas .gg-meta-image {
-            cursor: zoom-in;
-        }
-        #gg-image-lightbox {
-            position: fixed;
-            inset: 0;
-            z-index: 100010;
-            background: rgba(0, 0, 0, 0.85);
-            overflow: hidden;
-            cursor: grab;
-            user-select: none;
-        }
-        #gg-image-lightbox.gg-dragging { cursor: grabbing; }
-        #gg-image-lightbox img {
-            position: absolute;
-            top: 50%;
-            left: 50%;
-            max-width: 92vw;
-            max-height: 92vh;
-            margin: 0;
-            border-radius: 4px;
-            transform-origin: center center;
-            -webkit-user-drag: none;
-        }
-        #gg-image-lightbox .gg-lightbox-hint {
-            position: absolute;
-            bottom: 12px;
-            left: 50%;
-            transform: translateX(-50%);
-            color: #ccc;
-            font-size: 12px;
-            pointer-events: none;
-        }
-        .gg-meta-row:last-child {
-            border-bottom: none;
-            margin-bottom: 0;
-            padding-bottom: 0;
-        }
-
-        /* Location Info Box */
-        #gg-location-info {
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            padding: 8px;
-            margin-bottom: 12px;
-            font-size: 0.8rem;
-            border: 1px solid rgba(255,255,255,0.1);
-        }
-        .gg-loc-row {
-            display: flex;
-            align-items: flex-start;
-            margin-bottom: 4px;
-        }
-        .gg-loc-row:last-child { margin-bottom: 0; }
-        .gg-loc-label {
-            color: rgba(255,255,255,0.5);
-            width: 70px;
-            flex-shrink: 0;
-            font-weight: 600;
-        }
-        .gg-loc-val {
-            color: #fff;
-            font-weight: 500;
-            word-break: break-word;
-        }
-        .gg-loc-val-country {
-            color: var(--gg-primary-green);
-        }
-        .gg-loc-coords {
-            font-family: monospace;
-            color: #ffd700;
-        }
-
-        #gg-settings-btn,
-        #gg-meta-admin-btn {
-            margin-right: 8px;
-        }
-        .gg-status-msg {
-            font-size: 0.75em;
-            color: rgba(255, 255, 255, 0.5);
-            margin-top: var(--gg-meta-content-status-gap);
-            font-style: normal;
-            text-align: right;
-            cursor: pointer;
-        }
-
-        /* Modal Spacing System */
-        :root {
-            --modal-spacing-xs: 4px;
-            --modal-spacing-sm: 8px;
-            --modal-spacing-md: 12px;
-            --modal-spacing-lg: 24px;
-            --modal-related-gap: var(--modal-spacing-sm);
-            --modal-section-gap: var(--modal-spacing-md);
-            --gg-text-optical-shift: 0.25px;
-            --modal-radius: 16px;
-            --modal-window-width: 550px;
-            --modal-btn-radius: 30px;
-            --modal-btn-height: 42px;
-            --modal-btn-font-size: 0.8rem;
-            --modal-control-bg: rgba(0, 0, 0, 0.3);
-            --modal-control-bg-active: rgba(0, 0, 0, 0.4);
-            --modal-control-border: rgba(100, 90, 150, 0.4);
-            --modal-control-radius: 8px;
-            --gg-primary-green: #97e851;
-            --gg-primary-border: #479440;
-            --gg-primary-gradient: linear-gradient(#97e851, #479440);
-            --gg-edit-yellow: #f4c542;
-            --gg-edit-yellow-dark: #a97912;
-            --gg-edit-gradient: linear-gradient(180deg, #f4c542 0%, #d9a91f 100%);
-            --gg-danger-red: #ef4444;
-            --gg-danger-red-soft: rgba(239, 68, 68, 0.14);
-            --gg-tag-grey: rgba(255, 255, 255, 0.18);
-            --gg-tag-grey-active: rgba(255, 255, 255, 0.19);
-            --gg-scope-blue: #60a5fa;
-            --gg-scope-blue-soft: rgba(96, 165, 250, 0.14);
-            --gg-context-neutral: #a89de0;
-            --gg-context-normal: #97e851;
-            --gg-context-edit: #f4c542;
-            --gg-context-pat: #38bdf8;
-            --gg-context-danger: #ef4444;
-            --gg-primary-shadow: 0 0.275rem 1.125rem rgba(0, 0, 0, 0.25),
-                inset 0 0.0625rem 0 rgba(255, 255, 255, 0.2),
-                inset 0 -0.125rem 0 rgba(0, 0, 0, 0.3);
-        }
-
-        /* Modal Base Styles - GeoGuessr Native Style */
-        #gg-meta-modal,
-        #gg-settings-modal .gg-modal-container,
-        #gg-meta-admin-modal,
-        #gg-dialog-modal {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            --gg-context-rgb: 168, 157, 224;
-            --gg-context-accent: var(--gg-context-neutral);
-            background:
-                radial-gradient(circle at 12% -8%, rgba(var(--gg-context-rgb), 0.18), transparent 36%),
-                radial-gradient(circle at 96% 108%, rgba(var(--gg-context-rgb), 0.08), transparent 42%),
-                linear-gradient(180deg, rgba(37, 32, 96, 0.98) 0%, rgba(22, 20, 57, 0.99) 100%);
-            border: 1px solid rgba(var(--gg-context-rgb), 0.38);
-            border-radius: var(--modal-radius);
-            color: white;
-            font-family: inherit;
-            font-weight: 700;
-            max-height: 85vh;
-            overflow-y: auto;
-            scrollbar-width: thin;
-            scrollbar-color: rgba(255,255,255,0.3) transparent;
-            box-shadow:
-                inset 0 1px 0 rgba(255,255,255,0.06),
-                inset 0 0 34px rgba(var(--gg-context-rgb), 0.06),
-                0 10px 34px rgba(0, 0, 0, 0.52);
-            text-align: center;
-            padding: var(--modal-spacing-lg);
-            transition: border-color 0.25s, box-shadow 0.25s, background 0.25s;
-        }
-
-        .gg-context-normal {
-            --gg-context-rgb: 151, 232, 81;
-            --gg-context-accent: var(--gg-context-normal);
-        }
-
-        .gg-context-edit {
-            --gg-context-rgb: 244, 197, 66;
-            --gg-context-accent: var(--gg-context-edit);
-        }
-
-        .gg-context-pat {
-            --gg-context-rgb: 56, 189, 248;
-            --gg-context-accent: var(--gg-context-pat);
-        }
-
-        .gg-context-danger {
-            --gg-context-rgb: 239, 68, 68;
-            --gg-context-accent: var(--gg-context-danger);
-        }
-
-        .gg-context-neutral {
-            --gg-context-rgb: 168, 157, 224;
-            --gg-context-accent: var(--gg-context-neutral);
-        }
-
-        #gg-meta-modal {
-            z-index: 100000;
-            width: min(var(--modal-window-width), calc(100vw - 32px));
-            box-sizing: border-box;
-            transition: all 0.3s ease-in-out;
-        }
-
-        #gg-meta-admin-modal {
-            z-index: 100000;
-            width: min(var(--modal-window-width), calc(100vw - 32px));
-            box-sizing: border-box;
-            text-align: left;
-        }
-
-        #gg-meta-admin-modal .gg-modal-header,
-        #gg-meta-admin-modal .gg-form-label,
-        #gg-meta-admin-modal .gg-form-hint {
-            text-align: center;
-        }
-
-        #gg-dialog-modal {
-            z-index: 100003;
-            width: 360px;
-            display: none;
-            box-sizing: border-box;
-        }
-
-        .gg-dialog-message {
-            color: rgba(255, 255, 255, 0.82);
-            font-size: 0.86rem;
-            font-weight: 500;
-            line-height: 1.45;
-            margin-bottom: var(--modal-section-gap);
-            white-space: pre-wrap;
-        }
-
-        .gg-dialog-actions {
-            display: flex;
-            flex-wrap: wrap;
-            gap: var(--modal-related-gap);
-            margin-top: var(--modal-section-gap);
-        }
-
-        .gg-dialog-actions .gg-btn-primary,
-        .gg-dialog-actions .gg-btn-secondary,
-        .gg-dialog-actions .gg-btn-danger {
-            margin-top: 0;
-            flex: 1;
-        }
-
-        .gg-dialog-actions .gg-btn-primary:only-child,
-        .gg-dialog-actions .gg-btn-secondary:only-child {
-            flex: 0 0 100%;
-        }
-
-        .gg-dialog-actions #gg-dialog-edit {
-            flex: 0 0 100%;
-            min-width: 0;
-        }
-
-        .gg-dialog-actions.gg-meta-action-buttons {
-            flex-direction: column;
-        }
-
-        .gg-dialog-actions.gg-meta-action-buttons .gg-btn-primary,
-        .gg-dialog-actions.gg-meta-action-buttons .gg-btn-secondary,
-        .gg-dialog-actions.gg-meta-action-buttons .gg-btn-danger {
-            flex: 0 0 var(--modal-btn-height);
-            width: 100%;
-            height: var(--modal-btn-height);
-            min-height: var(--modal-btn-height);
-            max-height: var(--modal-btn-height);
-        }
-
-        .gg-dialog-actions.gg-meta-action-buttons #gg-dialog-edit {
-            flex-basis: var(--modal-btn-height);
-        }
-
-        .gg-dialog-actions .gg-meta-action-divider {
-            flex: 0 0 1px;
-            width: 100%;
-            margin: 2px 0;
-            background: linear-gradient(
-                90deg,
-                transparent 0%,
-                rgba(255, 255, 255, 0.08) 18%,
-                rgba(255, 255, 255, 0.22) 50%,
-                rgba(255, 255, 255, 0.08) 82%,
-                transparent 100%
-            );
-        }
-
-        #gg-dialog-edit .gg-dialog-edit-label {
-            display: block;
-            max-width: 100%;
-            min-width: 0;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .gg-modal-subview {
-            transition: opacity 0.3s ease-in-out, transform 0.3s ease-in-out;
-            opacity: 1;
-            transform: translateX(0);
-        }
-
-        .gg-modal-subview.gg-hidden {
-            display: none;
-            opacity: 0;
-            transform: translateX(20px);
-        }
-
-        #gg-settings-modal .gg-modal-container {
-            z-index: 100001;
-            width: min(var(--modal-window-width), calc(100vw - 32px));
-            box-sizing: border-box;
-        }
-
-        /* Modal Header */
-        .gg-modal-header {
-            font-size: 1.1rem;
-            font-weight: 800;
-            color: #fff;
-            margin-bottom: var(--modal-spacing-lg);
-            text-align: center;
-            letter-spacing: 0.02em;
-        }
-
-        .gg-context-surface .gg-modal-header::after {
-            content: '';
-            display: block;
-            width: 36px;
-            height: 2px;
-            margin: 10px auto 0;
-            border-radius: 999px;
-            background: var(--gg-context-accent);
-            box-shadow: 0 0 12px rgba(var(--gg-context-rgb), 0.5);
-            opacity: 0.78;
-        }
-
-        .gg-modal-section-title {
-            font-size: 0.8rem;
-            font-weight: 700;
-            color: rgba(255, 255, 255, 0.58);
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-            margin: var(--modal-spacing-lg) 0 var(--modal-section-gap) 0;
-            text-align: center;
-        }
-
-        /* Form Elements */
-        .gg-form-group {
-            margin-bottom: var(--modal-section-gap);
-        }
-
-        .gg-form-group-lg {
-            margin-bottom: var(--modal-section-gap);
-        }
-
-        .gg-form-label {
-            display: block;
-            margin-bottom: var(--modal-related-gap);
-            font-size: 0.75rem;
-            color: rgba(255, 255, 255, 0.5);
-            font-weight: 600;
-            text-align: center;
-        }
-
-        .gg-form-input {
-            width: 100%;
-            padding: var(--modal-related-gap) var(--modal-section-gap);
-            background: var(--modal-control-bg);
-            border: 1px solid var(--modal-control-border);
-            color: white;
-            border-radius: var(--modal-control-radius);
-            box-sizing: border-box;
-            font-family: inherit;
-            font-size: 0.95rem;
-            font-weight: 400;
-            text-align: center;
-            transition: border-color 0.2s, background 0.2s;
-        }
-
-        .gg-form-input::placeholder {
-            color: rgba(255, 255, 255, 0.4);
-        }
-
-        .gg-form-input:focus {
-            outline: none;
-            background: var(--modal-control-bg-active);
-            border-color: rgba(var(--gg-context-rgb), 0.68);
-            box-shadow: 0 0 0 2px rgba(var(--gg-context-rgb), 0.1);
-        }
-
-        textarea.gg-form-input {
-            resize: vertical;
-            min-height: 42px;
-            text-align: center; /* Center horizontally like other inputs */
-            /* Vertical centering handled by padding inherited from .gg-form-input */
-        }
-
-        #meta-desc,
-        #gg-admin-meta-desc {
-            text-align: left;
-        }
-
-        .gg-form-hint {
-            font-size: 0.7rem;
-            color: rgba(255, 255, 255, 0.4);
-            margin-top: var(--modal-related-gap);
-            font-weight: 400;
-            text-align: center;
-        }
-
-        .gg-hidden-control {
-            display: none;
-        }
-
-        .gg-pill-grid {
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 4px;
-            margin-top: var(--modal-related-gap);
-            text-align: center;
-        }
-
-        .gg-pill-grid .gg-tag-pill {
-            margin: 0;
-        }
-
-        /* Buttons - GeoGuessr Green Style */
-        .gg-btn-primary {
-            --gg-button-hover-scale: 1.02;
-            --gg-button-active-scale: 0.99;
-            background: var(--gg-primary-gradient);
-            color: #fff;
-            border: none;
-            padding: var(--modal-related-gap) 0;
-            padding-bottom: calc(var(--modal-related-gap) + 0.125rem);
-            border-radius: var(--modal-btn-radius);
-            cursor: pointer;
-            width: 100%;
-            font-weight: 800;
-            font-size: var(--modal-btn-font-size);
-            font-style: italic;
-            line-height: 1;
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-            margin-top: var(--modal-section-gap);
-            transition: transform 0.15s, background 0.15s;
-            box-shadow: var(--gg-primary-shadow);
-            text-shadow: 0 0.0625rem 0.125rem #171235;
-            will-change: transform;
-            box-sizing: border-box;
-            height: var(--modal-btn-height); /* Fixed height for consistency */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            user-select: none;
-            -webkit-user-select: none;
-            -webkit-tap-highlight-color: transparent;
-            appearance: none;
-            -webkit-appearance: none;
-        }
-
-        .gg-btn-primary:focus,
-        .gg-btn-secondary:focus,
-        .gg-btn-danger:focus {
-            outline: none;
-        }
-
-        .gg-btn-primary:focus-visible {
-            outline: none;
-            box-shadow: 0 0 0 2px rgba(140, 212, 90, 0.35), 0 4px 12px rgba(0, 0, 0, 0.25);
-        }
-
-        .gg-btn-primary:hover {
-            transform: scale(var(--gg-button-hover-scale));
-        }
-
-        .gg-btn-primary:active {
-            transform: scale(var(--gg-button-active-scale));
-        }
-
-        /* Editing and management actions */
-        .gg-btn-primary.gg-btn-edit {
-            background: var(--gg-edit-gradient);
-            border-color: var(--gg-edit-yellow-dark);
-            color: #fff;
-        }
-
-        .gg-btn-primary.gg-btn-edit:focus-visible {
-            box-shadow: 0 0 0 2px rgba(244, 197, 66, 0.35), 0 4px 12px rgba(0, 0, 0, 0.25);
-        }
-
-        .gg-btn-primary.gg-btn-edit:hover {
-            background: linear-gradient(180deg, #ffd766 0%, #e8b733 100%);
-            color: #fff;
-        }
-
-        .gg-btn-primary:disabled,
-        .gg-btn-secondary:disabled,
-        .gg-btn-danger:disabled,
-        .gg-btn-link-meta:disabled,
-        #gg-meta-add-btn:disabled,
-        #gg-meta-admin-btn:disabled,
-        #gg-settings-btn:disabled {
-            opacity: 0.58;
-            cursor: wait;
-            transform: none;
-            pointer-events: none;
-        }
-
-        .gg-operation-busy .gg-tag-pill,
-        .gg-operation-busy .gg-admin-location-item,
-        .gg-operation-busy .gg-meta-list-item {
-            pointer-events: none;
-        }
-
-        .gg-btn-secondary {
-            background: var(--modal-control-bg);
-            color: rgba(255, 255, 255, 0.7);
-            border: 1px solid var(--modal-control-border);
-            padding: var(--modal-related-gap) 0;
-            cursor: pointer;
-            margin-top: var(--modal-section-gap);
-            width: 100%;
-            font-size: var(--modal-btn-font-size);
-            font-weight: 700;
-            line-height: 1;
-            border-radius: var(--modal-btn-radius); /* Match primary button */
-            transition: background 0.2s, color 0.2s;
-            box-sizing: border-box;
-            height: var(--modal-btn-height); /* Fixed height for consistency */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-transform: uppercase; /* Match layout style */
-            letter-spacing: 0.03em;
-            user-select: none;
-            -webkit-user-select: none;
-            -webkit-tap-highlight-color: transparent;
-            appearance: none;
-            -webkit-appearance: none;
-        }
-
-        .gg-btn-secondary:focus-visible {
-            outline: none;
-            box-shadow: 0 0 0 2px rgba(150, 140, 200, 0.35);
-        }
-
-        .gg-btn-secondary:hover {
-            background: var(--modal-control-bg-active);
-            color: #fff;
-        }
-
-        .gg-btn-danger {
-            background: transparent;
-            color: var(--gg-danger-red);
-            border: none;
-            padding: var(--modal-related-gap) 0;
-            border-radius: var(--modal-btn-radius); /* Match primary button */
-            cursor: pointer;
-            width: 100%;
-            font-size: var(--modal-btn-font-size);
-            font-weight: 700;
-            line-height: 1;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            transition: background 0.2s, color 0.2s;
-            box-sizing: border-box;
-            box-shadow: inset 0 0 0 2px var(--gg-danger-red);
-            height: var(--modal-btn-height); /* Fixed height for consistency */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            user-select: none;
-            -webkit-user-select: none;
-            -webkit-tap-highlight-color: transparent;
-            appearance: none;
-            -webkit-appearance: none;
-        }
-
-        .gg-btn-danger:focus-visible {
-            outline: none;
-            box-shadow: inset 0 0 0 2px var(--gg-danger-red), inset 0 0 0 4px rgba(239, 68, 68, 0.3);
-        }
-
-        .gg-btn-danger:hover {
-            background: var(--gg-danger-red-soft);
-            box-shadow: inset 0 0 0 2px var(--gg-danger-red);
-        }
-
-        #gg-save-settings {
-            margin-top: 0;
-        }
-
-        #meta-details-btn {
-            margin-top: 0;
-        }
-
-        /* Divider */
-        .gg-modal-divider {
-            border: 0;
-            height: 1px;
-            background: linear-gradient(
-                90deg,
-                transparent 0%,
-                rgba(255, 255, 255, 0.06) 18%,
-                rgba(var(--gg-context-rgb), 0.28) 50%,
-                rgba(255, 255, 255, 0.06) 82%,
-                transparent 100%
-            );
-            margin: var(--modal-section-gap) 0;
-        }
-
-        .gg-modal-divider + .gg-btn-primary,
-        .gg-modal-divider + .gg-btn-secondary,
-        .gg-modal-divider + .gg-btn-danger,
-        .gg-modal-divider + .gg-selection-actions,
-        .gg-modal-divider + .gg-admin-actions {
-            margin-top: 0;
-        }
-
-        /* Existing Metas List */
-        #gg-existing-metas {
-            height: 150px;
-            overflow-y: auto;
-            scrollbar-width: thin;
-            scrollbar-color: rgba(255,255,255,0.2) transparent;
-            width: 100%;
-            background: var(--modal-control-bg);
-            border: 1px solid var(--modal-control-border);
-            border-radius: var(--modal-control-radius);
-            box-sizing: border-box;
-            margin-top: var(--modal-related-gap);
-        }
-
-        .gg-meta-list-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: var(--modal-related-gap) var(--modal-section-gap);
-            border-bottom: 1px solid rgba(255,255,255,0.06);
-        }
-
-        .gg-list-load-more {
-            width: 100%;
-            min-height: 36px;
-            border: 0;
-            border-top: 1px solid rgba(255,255,255,0.06);
-            background: transparent;
-            color: rgba(255,255,255,0.58);
-            cursor: pointer;
-            font: inherit;
-            font-size: 11px;
-            overflow-anchor: none;
-        }
-
-        .gg-list-load-more:hover,
-        .gg-list-load-more:focus-visible {
-            color: #fff;
-            background: rgba(255,255,255,0.05);
-            outline: none;
-        }
-
-        .gg-meta-list-main {
-            display: flex;
-            align-items: baseline;
-            gap: 4px;
-            flex: 1;
-            overflow: hidden;
-            min-height: 100%;
-        }
-
-        .gg-meta-list-item:last-child {
-            border-bottom: none;
-        }
-
-        .gg-list-empty-state {
-            padding: var(--modal-related-gap) 0;
-        }
-
-        .gg-meta-list-title {
-            font-size: 0.8rem;
-            font-weight: 600;
-            color: #fff;
-            white-space: nowrap;
-            line-height: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            padding: 0 4px;
-            flex-shrink: 0;
-        }
-
-        .gg-meta-list-tags {
-            display: flex;
-            align-items: baseline;
-            gap: 4px;
-            overflow-x: auto;
-            scrollbar-width: none;
-            height: 100%;
-            flex: 1;
-            font-size: 0.65rem;
-            color: rgba(255,255,255,0.4);
-            margin-top: 2px;
-        }
-
-        .gg-meta-list-tags .gg-tag-static {
-            margin-right: 0;
-        }
-
-        .gg-meta-list-tags .gg-scope-static {
-            margin-right: 4px;
-        }
-
-        .gg-scope-static {
-            background: rgba(96, 165, 250, 0.24);
-            border-color: rgba(147, 197, 253, 0.62);
-            color: #e8f3ff;
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 2px 4px rgba(0,0,0,0.24);
-        }
-
-        .gg-modal-header-with-back {
-            position: relative;
-            display: block;
-        }
-
-        .gg-modal-back-btn {
-            background: none;
-            border: none;
-            color: rgba(255,255,255,0.5);
-            cursor: pointer;
-            position: absolute;
-            left: 0;
-            top: 0;
-            transform: none;
-            display: flex;
-            align-items: center;
-            padding: 0;
-        }
-
-        .gg-admin-meta-list {
-            height: 260px;
-            overflow-y: auto;
-            scrollbar-width: thin;
-            scrollbar-color: rgba(255,255,255,0.2) transparent;
-            width: 100%;
-            background: var(--modal-control-bg);
-            border: 1px solid var(--modal-control-border);
-            border-radius: var(--modal-control-radius);
-            box-sizing: border-box;
-            margin-top: var(--modal-related-gap);
-        }
-
-        .gg-admin-meta-item {
-            cursor: default;
-            gap: var(--modal-related-gap);
-            transition: background 0.2s;
-        }
-
-        .gg-admin-meta-item .gg-meta-list-main {
-            min-width: 0;
-            padding-right: var(--modal-related-gap);
-        }
-
-        .gg-admin-meta-item .gg-meta-list-title {
-            flex: 0 1 auto;
-            min-width: 0;
-        }
-
-        .gg-admin-meta-item .gg-meta-list-tags {
-            flex: 0 1 auto;
-            min-width: 0;
-            max-width: none;
-            overflow: hidden;
-        }
-
-        .gg-admin-controls {
-            margin-bottom: 8px;
-        }
-
-        .gg-admin-sort-control {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 2px;
-            margin-top: 6px;
-        }
-
-        .gg-admin-sort-control .gg-form-label {
-            margin: 0;
-            color: rgba(255, 255, 255, 0.45);
-            font-size: 0.72rem;
-            letter-spacing: 0.02em;
-            white-space: nowrap;
-        }
-
-        .gg-hud-sort-control {
-            margin: 0 0 6px;
-            justify-content: flex-end;
-            flex: 0 0 auto;
-        }
-
-        .gg-admin-sort-select-wrap {
-            position: relative;
-            display: inline-flex;
-            align-items: center;
-        }
-
-        .gg-admin-sort-select-wrap::after {
-            content: '';
-            position: absolute;
-            right: 10px;
-            top: calc(50% - 4px);
-            width: 6px;
-            height: 6px;
-            border-right: 1.5px solid rgba(255, 255, 255, 0.65);
-            border-bottom: 1.5px solid rgba(255, 255, 255, 0.65);
-            pointer-events: none;
-            transform: rotate(45deg);
-            transition: border-color 0.2s;
-        }
-
-        .gg-admin-sort-select {
-            width: auto;
-            padding: 3px 22px 3px 4px;
-            background: transparent;
-            border: 0;
-            border-radius: var(--modal-control-radius);
-            cursor: pointer;
-            color: rgba(255, 255, 255, 0.9);
-            font-size: 0.8rem;
-            text-align: left;
-            appearance: none;
-            -webkit-appearance: none;
-        }
-
-        .gg-admin-sort-select:focus,
-        .gg-admin-sort-select:focus-visible {
-            outline: none;
-            background: transparent;
-            border: 0;
-            box-shadow: none;
-        }
-
-        .gg-admin-sort-select-wrap:focus-within::after {
-            border-color: rgba(200, 190, 255, 0.95);
-        }
-
-        .gg-admin-details-grid {
-            display: block;
-        }
-
-        .gg-admin-details-grid .gg-form-group {
-            margin-bottom: var(--modal-section-gap);
-        }
-
-        #gg-settings-modal .gg-settings-danger-group {
-            --gg-context-rgb: 239, 68, 68;
-            --gg-context-accent: var(--gg-context-danger);
-        }
-
-        #meta-details-view > .gg-form-group:not(:last-of-type),
-        .gg-admin-details-grid > .gg-form-group:not(:last-child) {
-            position: relative;
-            padding-bottom: var(--modal-section-gap);
-        }
-
-        #meta-details-view > .gg-form-group:not(:last-of-type)::after,
-        .gg-admin-details-grid > .gg-form-group:not(:last-child)::after {
-            content: '';
-            position: absolute;
-            right: 0;
-            bottom: 0;
-            left: 0;
-            height: 1px;
-            background: linear-gradient(
-                90deg,
-                transparent 0%,
-                rgba(255, 255, 255, 0.06) 18%,
-                rgba(var(--gg-context-rgb), 0.24) 50%,
-                rgba(255, 255, 255, 0.06) 82%,
-                transparent 100%
-            );
-        }
-
-        .gg-admin-actions {
-            display: flex;
-            flex-direction: column;
-            gap: var(--modal-related-gap);
-            margin-top: var(--modal-section-gap);
-        }
-
-        .gg-admin-actions .gg-btn-primary,
-        .gg-admin-actions .gg-btn-secondary,
-        .gg-admin-actions .gg-btn-danger {
-            margin-top: 0;
-        }
-
-        .gg-admin-linked-locations {
-            width: 100%;
-            box-sizing: border-box;
-        }
-
-        .gg-admin-location-item {
-            width: 100%;
-            display: flex;
-            align-items: center;
-            gap: var(--modal-related-gap);
-        }
-
-        .gg-admin-location-open {
-            flex: 1;
-            min-width: 0;
-            display: flex;
-            align-items: center;
-            gap: var(--modal-related-gap);
-            border: none;
-            background: transparent;
-            color: rgba(255,255,255,0.88);
-            cursor: pointer;
-            font: inherit;
-            font-size: 0.75rem;
-            font-weight: 600;
-            line-height: 1.25;
-            text-align: left;
-            padding: var(--modal-related-gap) var(--modal-section-gap);
-            border-radius: var(--modal-control-radius);
-            transition: background 0.15s;
-        }
-
-        .gg-admin-location-open:hover,
-        .gg-admin-location-open:focus-visible {
-            background: rgba(255,255,255,0.05);
-            outline: none;
-        }
-
-        .gg-admin-location-pin,
-        .gg-admin-location-external {
-            width: 14px;
-            height: 14px;
-            flex: 0 0 14px;
-            opacity: 0.42;
-            transition: opacity 0.15s;
-        }
-
-        .gg-admin-location-label {
-            flex: 1;
-            min-width: 0;
-        }
-
-        .gg-admin-location-external {
-            opacity: 0.28;
-        }
-
-        .gg-admin-location-open:hover .gg-admin-location-pin,
-        .gg-admin-location-open:hover .gg-admin-location-external,
-        .gg-admin-location-open:focus-visible .gg-admin-location-pin,
-        .gg-admin-location-open:focus-visible .gg-admin-location-external {
-            opacity: 0.85;
-        }
-
-        .gg-admin-location-remove {
-            flex: 0 0 auto;
-            width: 22px;
-            height: 22px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            border: 1px solid var(--gg-danger-red);
-            background: transparent;
-            color: var(--gg-danger-red);
-            border-radius: var(--modal-control-radius);
-            cursor: pointer;
-            padding: 0;
-            transition: background 0.15s, color 0.15s;
-        }
-
-        .gg-admin-location-remove:hover,
-        .gg-admin-location-remove:focus-visible {
-            background: var(--gg-danger-red-soft);
-            outline: none;
-        }
-
-        .gg-admin-location-remove svg {
-            width: 12px;
-            height: 12px;
-        }
-
-        .gg-selection-actions {
-            display: flex;
-            flex-direction: column;
-            gap: var(--modal-related-gap);
-            margin-top: 0;
-        }
-
-        #gg-link-selected-btn {
-            width: 100%;
-            margin-top: 0;
-            margin-bottom: 0;
-        }
-
-        #gg-link-selected-btn:disabled {
-            cursor: not-allowed;
-            pointer-events: auto;
-            box-shadow: none;
-        }
-
-        .gg-btn-link-meta {
-            --gg-button-hover-scale: 1.05;
-            --gg-button-active-scale: 0.975;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            background: var(--gg-primary-gradient);
-            color: #fff;
-            border: none;
-            padding: 4px 10px calc(4px + 0.125rem);
-            border-radius: 12px;
-            cursor: pointer;
-            font-size: 0.7rem;
-            font-weight: 800;
-            font-style: italic;
-            line-height: 1;
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-            transition: transform 0.15s, background 0.15s;
-            box-shadow: var(--gg-primary-shadow);
-            text-shadow: 0 0.0625rem 0.125rem #171235;
-            will-change: transform;
-            flex-shrink: 0;
-            user-select: none;
-            -webkit-user-select: none;
-        }
-
-        .gg-btn-link-meta:focus {
-            outline: none;
-        }
-
-        .gg-btn-link-meta:focus-visible {
-            outline: none;
-            box-shadow: 0 0 0 2px rgba(140, 212, 90, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
-        }
-
-        .gg-btn-link-meta:hover {
-            transform: scale(var(--gg-button-hover-scale));
-        }
-
-        .gg-btn-link-meta:active {
-            transform: scale(var(--gg-button-active-scale));
-        }
-
-        .gg-btn-link-meta.gg-tag-selected {
-            background: var(--gg-primary-green);
-            border-color: var(--gg-primary-border);
-        }
-
-        .gg-btn-link-meta.gg-btn-admin-edit {
-            background: var(--gg-edit-gradient);
-            border-color: var(--gg-edit-yellow-dark);
-            color: #fff;
-        }
-
-        .gg-btn-link-meta.gg-btn-admin-edit:focus-visible {
-            box-shadow: 0 0 0 2px rgba(244, 197, 66, 0.35), 0 2px 6px rgba(0, 0, 0, 0.25);
-        }
-
-        .gg-btn-link-meta.gg-btn-admin-edit:hover {
-            background: linear-gradient(180deg, #ffd766 0%, #e8b733 100%);
-        }
-
-        .gg-meta-link-toggle {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-            width: 28px;
-            height: 28px;
-            cursor: pointer;
-        }
-
-        .gg-meta-link-checkbox {
-            width: 18px;
-            height: 18px;
-            margin: 0;
-            accent-color: var(--gg-primary-green);
-            cursor: pointer;
-        }
-
-        .gg-meta-linked-indicator {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            min-width: 58px;
-            padding: 4px 10px;
-            border: 1px solid rgba(140, 212, 90, 0.5);
-            border-radius: 12px;
-            background: rgba(140, 212, 90, 0.16);
-            color: #bdf29a;
-            font-size: 0.7rem;
-            font-weight: 800;
-            font-style: italic;
-            line-height: 1;
-            text-transform: uppercase;
-            letter-spacing: 0.03em;
-            flex-shrink: 0;
-            user-select: none;
-            -webkit-user-select: none;
-        }
-
-        /* JSON Output */
-        #gg-json-output {
-            margin-top: var(--modal-section-gap);
-            background: var(--modal-control-bg-active);
-            padding: var(--modal-related-gap);
-            border-radius: var(--modal-control-radius);
-            font-family: monospace;
-            font-size: 0.7rem;
-            color: #6f6;
-            white-space: pre-wrap;
-            display: none;
-            word-break: break-all;
-        }
-
-        /* Spinner */
-        .gg-spinner {
-            display: inline-block;
-            width: 12px;
-            height: 12px;
-            border: 2px solid rgba(255,255,255,0.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: gg-spin 1s ease-in-out infinite;
-            margin-right: 8px;
-            flex-shrink: 0;
-        }
-
-        @keyframes gg-spin {
-            to { transform: rotate(360deg); }
-        }
-
-        /* Hide reaction wheel when HUD is active */
-        body.gg-hud-active button.styles_hudButton__kzfFK.styles_sizeSmall__O7Bw_.styles_roundBoth__hcuEN {
-            display: none !important;
-        }
-
-        /* Backdrop */
-        #gg-modal-backdrop {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0, 0, 0, 0.4);
-            backdrop-filter: blur(8px);
-            -webkit-backdrop-filter: blur(8px);
-            z-index: 99999;
-            display: none;
-            opacity: 0;
-            transition: opacity 0.3s;
-        }
-
-        #gg-modal-backdrop.gg-visible {
-            display: block;
-            opacity: 1;
-        }
-
-        .gg-modal-background-blurred {
-            filter: blur(4px);
-            pointer-events: none;
-        }
-
-        /* Preview Popup */
-        #gg-meta-preview-popup {
-            position: fixed;
-            width: 280px;
-            background: rgba(0, 0, 0, 0.95);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            border-radius: 12px;
-            padding: 12px;
-            z-index: 100002; /* Above modal */
-            pointer-events: none; /* Don't interfere with mouse */
-            opacity: 0;
-            transform: translateX(-10px);
-            transition: opacity 0.2s, transform 0.2s;
-            box-shadow: 0 4px 16px rgba(0,0,0,0.5);
-            display: flex;
-            flex-direction: column;
-            color: #fff; /* Ensure text is white */
-        }
-
-        #gg-meta-preview-popup.gg-visible {
-            opacity: 1;
-            transform: translateX(0);
-        }
-
-        #gg-meta-preview-popup.gg-image-url-preview {
-            padding: 6px;
-        }
-
-        #gg-meta-preview-popup .gg-meta-image {
-            width: 100%;
-            height: 140px; /* Fixed height */
-            object-fit: cover;
-            border-radius: 6px;
-            margin-bottom: 8px;
-            background: rgba(255,255,255,0.1); /* Placeholder bg */
-        }
-
-        #gg-meta-preview-popup.gg-image-url-preview .gg-meta-image {
-            height: auto;
-            max-height: min(420px, calc(100vh - 48px));
-            object-fit: contain;
-            margin-bottom: 0;
-        }
-
-        #gg-meta-preview-popup .gg-meta-item-title {
-            font-size: 0.95rem;
-            margin-bottom: 4px;
-            font-weight: 800;
-            color: #fff;
-        }
-
-        #gg-meta-preview-popup .gg-meta-description {
-            font-size: 0.75rem;
-            color: rgba(255, 255, 255, 0.9); /* Explicit color */
-            margin-bottom: 6px;
-            line-height: 1.4;
-            max-height: 80px;
-            overflow: hidden;
-            display: -webkit-box;
-            -webkit-line-clamp: 4;
-            -webkit-box-orient: vertical;
-            white-space: pre-line; /* keep line breaks from the description */
-        }
-
-        #gg-meta-preview-popup .gg-meta-description:last-child {
-            margin-bottom: 0;
-        }
-
-        #gg-meta-preview-popup .gg-meta-tags {
-            gap: 4px;
-            margin-left: 0;
-        }
-
-        #gg-meta-preview-popup .gg-meta-tags .gg-tag-static {
-            font-size: 0.6rem;
-            padding: 1px 4px;
-            margin: 0;
-        }
-
-        /* Triangle Pointer (Right side) - Rotated Square Method */
-        #gg-meta-preview-popup::after {
-            content: "";
-            position: absolute;
-            top: 50%;
-            right: -7px; /* Half of width protrudes */
-            margin-top: -6px;
-            width: 12px;
-            height: 12px;
-            background: rgba(0, 0, 0, 0.95);
-            border-top: 1px solid rgba(255, 255, 255, 0.2);
-            border-right: 1px solid rgba(255, 255, 255, 0.2);
-            transform: rotate(45deg);
-        }
+    // The stylesheet lives in styles.css and is served by local-server.js like the
+    // data files: edits show up on the next page load, no rebuild. The last copy is
+    // cached so the UI is styled immediately and still works if the server is down.
+    // Until a stylesheet is available the UI is kept hidden (no unstyled flash).
+    const STYLES_FILE = 'styles.css';
+    const STYLES_CACHE_STORAGE_KEY = 'gg_styles_cache';
+    const STYLES_PENDING_CLASS = 'gg-styles-pending';
+    const PENDING_STYLES = `
+        html.${STYLES_PENDING_CLASS} #gg-meta-hud,
+        html.${STYLES_PENDING_CLASS} #gg-modal-backdrop,
+        html.${STYLES_PENDING_CLASS} #gg-meta-preview-popup,
+        html.${STYLES_PENDING_CLASS} #gg-dialog-modal,
+        html.${STYLES_PENDING_CLASS} #gg-meta-modal,
+        html.${STYLES_PENDING_CLASS} #gg-settings-modal,
+        html.${STYLES_PENDING_CLASS} #gg-meta-admin-modal { display: none !important; }
     `;
+    let stylesElement = null;
 
-    function addStyles() {
-        const style = document.createElement('style');
-        style.innerText = STYLES;
-        (document.head || document.documentElement).appendChild(style);
+    function applyStyles(css) {
+        if (!stylesElement) {
+            stylesElement = document.createElement('style');
+            (document.head || document.documentElement).appendChild(stylesElement);
+        }
+        stylesElement.textContent = css;
+        document.documentElement.classList.remove(STYLES_PENDING_CLASS);
+    }
+
+    async function addStyles() {
+        const cachedCss = readStoredValue(STYLES_CACHE_STORAGE_KEY);
+        if (cachedCss) {
+            applyStyles(cachedCss);
+        } else {
+            const pendingStyle = document.createElement('style');
+            pendingStyle.textContent = PENDING_STYLES;
+            (document.head || document.documentElement).appendChild(pendingStyle);
+            document.documentElement.classList.add(STYLES_PENDING_CLASS);
+        }
+
+        try {
+            const response = await requestRawText(getRawFileUrl(STYLES_FILE), STYLES_FILE);
+            if (response.status !== 200 || !response.responseText) {
+                throw new Error(`${STYLES_FILE} HTTP ${response.status}`);
+            }
+            if (response.responseText !== cachedCss) {
+                applyStyles(response.responseText);
+                writeStoredValue(STYLES_CACHE_STORAGE_KEY, response.responseText);
+            }
+        } catch (err) {
+            console.warn(`[BetterMetas] Could not load ${STYLES_FILE}${cachedCss ? ', using the cached copy' : ''}:`, err);
+        }
     }
 
     function getSavedHudSize() {
         try {
-            const savedSize = JSON.parse(localStorage.getItem(HUD_SIZE_STORAGE_KEY) || 'null');
+            const savedSize = JSON.parse(readStoredValue(HUD_SIZE_STORAGE_KEY) || 'null');
             if (
                 savedSize &&
                 Number.isFinite(savedSize.width) &&
@@ -3693,7 +2212,7 @@
                 return savedSize;
             }
         } catch (err) {
-            console.warn('[Geoguessr Meta] Invalid saved HUD size:', err);
+            console.warn('[BetterMetas] Invalid saved HUD size:', err);
         }
 
         return null;
@@ -3724,7 +2243,7 @@
 
     function getSavedHudPosition() {
         try {
-            const savedPosition = JSON.parse(localStorage.getItem(HUD_POSITION_STORAGE_KEY) || 'null');
+            const savedPosition = JSON.parse(readStoredValue(HUD_POSITION_STORAGE_KEY) || 'null');
             if (
                 savedPosition &&
                 Number.isFinite(savedPosition.left) &&
@@ -3765,28 +2284,20 @@
 
     function saveHudPosition(hud) {
         const rect = hud.getBoundingClientRect();
-        localStorage.setItem(HUD_POSITION_STORAGE_KEY, JSON.stringify({
+        writeStoredValue(HUD_POSITION_STORAGE_KEY, JSON.stringify({
             left: Math.round(rect.left),
             top: Math.round(rect.top)
         }));
     }
 
-    function getAdminMetaSource(metaId) {
-        return userMetaIds.has(metaId) ? 'user' : 'unknown';
+    // Every meta comes from the local data files; this guards against an id that is
+    // not part of the loaded data.
+    function isUserMeta(metaId) {
+        return userMetaIds.has(metaId);
     }
 
-    function getAdminMetaSourceLabel(source) {
-        return source === 'user' ? 'User' : 'Unknown';
-    }
-
-    function getAdminMetaLocationCounts(metaId) {
-        const userPanoids = new Set();
-
-        Object.entries(userLocationMap || {}).forEach(([panoid, entry]) => {
-            if (getLocationMetaIds(entry).includes(metaId)) userPanoids.add(panoid);
-        });
-
-        return { user: userPanoids.size, total: userPanoids.size };
+    function countAdminMetaLocations(metaId) {
+        return Object.values(userLocationMap).filter(entry => getLocationMetaIds(entry).includes(metaId)).length;
     }
 
     function removeMetaIdFromLocationEntries(locations, metaId) {
@@ -3971,7 +2482,7 @@
     function getAdminMetaLinkedLocations(metaId) {
         const linkedLocations = [];
         const metaScope = getMetaById(metaId)?.scope;
-        forEachCombinedLocationEntry((panoid, rawEntry) => {
+        Object.entries(userLocationMap).forEach(([panoid, rawEntry]) => {
             const entry = normalizeLocationEntry(rawEntry);
             if (!entry || !getLocationMetaIds(entry).includes(metaId)) return;
             linkedLocations.push({
@@ -4005,8 +2516,8 @@
                 formatPoint(location.lat, location.lng),
                 formatPoint(location.latB, location.lngB)
             ].filter(Boolean).join(' \u2192 ');
-            const roads = getSegmentRoadList(location.road).join(' / ');
-            return `${location.displayCountry || 'Unknown country'}, ${roads} (segment${points ? ' ' + points : ''})`;
+            // The roads are listed apart (collapsed) by renderAdminLinkedLocations.
+            return `${location.displayCountry || 'Unknown country'}, ${points || 'segment'}`;
         }
 
         const parts = [
@@ -4039,6 +2550,36 @@
             return;
         }
 
+        // Segments: the roads sit in a dropdown, collapsed by default.
+        const renderSegmentRoads = location => {
+            if (normalizeScope(location.scope) !== 'segment') return '';
+            const roads = getSegmentRoadList(location.road);
+            if (roads.length === 0) return '';
+            return `
+                <details class="gg-admin-location-roads">
+                    <summary>${roads.length} road${roads.length > 1 ? 's' : ''}</summary>
+                    <ul>${roads.map(road => `
+                        <li>
+                            <span class="gg-admin-location-road-name">${escapeHtml(road)}</span>
+                            <button type="button" class="gg-admin-location-remove gg-admin-road-remove" data-panoid="${escapeHtml(location.panoid)}" data-road="${escapeHtml(road)}" title="Remove this road" aria-label="Remove this road">
+                                <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                            </button>
+                        </li>`).join('')}</ul>
+                </details>`;
+        };
+
+        // Re-rendering (after a road removal, a sync...) must not collapse the dropdowns
+        // the user opened: remember them, for the same meta only.
+        const openRoadPanoids = new Set();
+        if (container.dataset.metaId === metaId) {
+            container.querySelectorAll('.gg-admin-location-item').forEach(item => {
+                if (item.querySelector('.gg-admin-location-roads[open]')) {
+                    openRoadPanoids.add(item.querySelector('.gg-admin-location-remove')?.dataset.panoid);
+                }
+            });
+        }
+        container.dataset.metaId = metaId;
+
         container.innerHTML = linkedLocations.map(location => `
             <div class="gg-admin-location-item">
                 <button type="button" class="gg-admin-location-open" data-map-url="${escapeHtml(getGoogleMapsUrlForLocation(location))}" title="Open in Google Maps">
@@ -4049,8 +2590,15 @@
                 <button type="button" class="gg-admin-location-remove" data-panoid="${escapeHtml(location.panoid)}" title="Unlink this location from the meta" aria-label="Unlink this location from the meta">
                     <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
                 </button>
+                ${renderSegmentRoads(location)}
             </div>
         `).join('');
+
+        container.querySelectorAll('.gg-admin-location-item').forEach(item => {
+            const panoid = item.querySelector('.gg-admin-location-remove')?.dataset.panoid;
+            const details = item.querySelector('.gg-admin-location-roads');
+            if (details && openRoadPanoids.has(panoid)) details.open = true;
+        });
 
         container.querySelectorAll('.gg-admin-location-open').forEach(item => {
             item.addEventListener('click', (e) => {
@@ -4065,7 +2613,8 @@
             btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
-                unlinkMetaFromAdminLocation(metaId, btn.dataset.panoid);
+                if (btn.dataset.road) removeRoadFromAdminSegment(metaId, btn.dataset.panoid, btn.dataset.road);
+                else unlinkMetaFromAdminLocation(metaId, btn.dataset.panoid);
             });
         });
     }
@@ -4102,10 +2651,6 @@
         if (currentPanoid) refreshDisplay();
     }
 
-    function cloneJson(value) {
-        return JSON.parse(JSON.stringify(value));
-    }
-
     // Entries are copied (not shared) because a link/unlink can now touch several
     // entries (<panoid>, <panoid>__<scope>, or a matched entry of another panoid),
     // and the previous map is kept as a rollback snapshot.
@@ -4129,7 +2674,7 @@
             userLocationMap,
             metasData,
             userMetaIds: new Set(userMetaIds),
-            pendingLocalChanges: cloneJson(loadPendingLocalChanges())
+            pendingLocalChanges: structuredClone(loadPendingLocalChanges())
         };
     }
 
@@ -4148,15 +2693,27 @@
         if (currentPanoid) refreshDisplay();
     }
 
-    async function getAdminMetaFromForm(existingMeta) {
+    // Reads the admin form without side effects (the image is only imported later).
+    function readAdminMetaForm() {
         const readValue = id => (document.getElementById(id)?.value || '').trim();
-        const updatedMeta = {
-            ...existingMeta,
+        return {
             title: readValue('gg-admin-meta-title'),
             description: readValue('gg-admin-meta-desc'),
-            imageUrl: await resolveImageForSave(readValue('gg-admin-meta-image'), getCountrySlugForMeta(existingMeta)),
+            rawImage: readValue('gg-admin-meta-image'),
             scope: normalizeScope(readValue('gg-admin-meta-scope')),
             tags: normalizeTags(readValue('gg-admin-meta-tags'))
+        };
+    }
+
+    // Builds the edited meta; a remote image URL is imported to disk here.
+    async function buildAdminMeta(existingMeta, form) {
+        const updatedMeta = {
+            ...existingMeta,
+            title: form.title,
+            description: form.description,
+            imageUrl: await resolveImageForSave(form.rawImage, getCountrySlugForMeta(existingMeta)),
+            scope: form.scope,
+            tags: form.tags
         };
 
         // Only bump 'updatedAt' when something actually changed, so a no-op
@@ -4188,7 +2745,7 @@
 
     function loadPendingLocalChanges() {
         try {
-            return normalizePendingLocalChanges(JSON.parse(localStorage.getItem(PENDING_LOCAL_CHANGES_STORAGE_KEY) || 'null'));
+            return normalizePendingLocalChanges(JSON.parse(readStoredValue(PENDING_LOCAL_CHANGES_STORAGE_KEY) || 'null'));
         } catch (err) {
             console.warn('[BetterMetas] Invalid pending local changes:', err);
             return getEmptyPendingLocalChanges();
@@ -4198,11 +2755,11 @@
     function savePendingLocalChanges(pending) {
         const normalized = normalizePendingLocalChanges(pending);
         if (normalized.metas.length === 0 && Object.keys(normalized.locations).length === 0) {
-            localStorage.removeItem(PENDING_LOCAL_CHANGES_STORAGE_KEY);
+            clearStoredValue(PENDING_LOCAL_CHANGES_STORAGE_KEY);
             return;
         }
 
-        localStorage.setItem(PENDING_LOCAL_CHANGES_STORAGE_KEY, JSON.stringify(normalized));
+        writeStoredValue(PENDING_LOCAL_CHANGES_STORAGE_KEY, JSON.stringify(normalized));
     }
 
     function mergePendingLocalChangesInto(userMetas, userLocations) {
@@ -4300,7 +2857,7 @@
         const usedKeys = addMetaIdsToLocationMap(userLocationMap, panoid, metaIds, scopeOverride);
         proximityIndexDirty = true;
         rememberLocalLocationLinks(usedKeys);
-        console.log('[BetterMetas] Applied local location links:', {
+        debugLog('[BetterMetas] Applied local location links:', {
             panoid,
             metaIds,
             usedKeys: Object.fromEntries(usedKeys),
@@ -4366,7 +2923,7 @@
         removeMetaIdsFromPanoidLocations(userLocationMap, panoid, metaIds);
         proximityIndexDirty = true;
         forgetLocalLocationLinks(panoid, metaIds);
-        console.log('[BetterMetas] Applied local location unlinks:', {
+        debugLog('[BetterMetas] Applied local location unlinks:', {
             panoid,
             metaIds,
             linkedMetaIds: Array.from(getLinkedMetaIdsForPanoid(userLocationMap, panoid))
@@ -4389,7 +2946,7 @@
         const usedKeys = addMetaIdsToLocationMap(userLocationMap, panoid, [meta.id], meta.scope);
         proximityIndexDirty = true;
         rememberLocalMeta(meta, usedKeys);
-        console.log('[BetterMetas] Applied local saved meta:', {
+        debugLog('[BetterMetas] Applied local saved meta:', {
             panoid,
             metaId: meta.id,
             usedKeys: Object.fromEntries(usedKeys),
@@ -4450,6 +3007,33 @@
             if (scope) setControlsDisabled(scope, false);
             activeMutationCount = Math.max(0, activeMutationCount - 1);
         };
+    }
+
+    // Skeleton shared by the changes that are applied locally first and then written
+    // to disk: busy UI, rollback snapshot, failure alert. `run` does the work and
+    // throws on failure; the local state is then restored and the user is told.
+    // `prepare` runs first, under the busy UI (e.g. waiting for geocoding).
+    // Returns null if another change is still running, otherwise whether it succeeded.
+    async function runMutation({ ui, failTitle, prepare = null, run }) {
+        const finishUi = beginMutationUi(ui);
+        if (!finishUi) return null;
+
+        try {
+            if (prepare) await prepare();
+            const snapshot = createLocalDataSnapshot();
+            try {
+                await run();
+                return true;
+            } catch (err) {
+                console.error(err);
+                restoreLocalDataSnapshot(snapshot);
+                await showToolAlert(failTitle, err.message || String(err));
+                updateStatus(failTitle);
+                return false;
+            }
+        } finally {
+            finishUi();
+        }
     }
 
     function scheduleBackgroundDataRefresh(delay = DATA_REFRESH_AFTER_SAVE_MS) {
@@ -4622,72 +3206,16 @@
         return showToolDialog({ title, message, confirmText, cancelText, danger });
     }
 
-    function showMetaTitleActionDialog({ title = '', action = '', canEdit = false } = {}) {
-        const dialog = document.getElementById('gg-dialog-modal');
-        const backdrop = document.getElementById('gg-modal-backdrop');
-        if (!dialog) return Promise.resolve(null);
-
-        const actionLabel = action === 'unlink' ? 'Unlink' : 'Link';
-        const actionClass = action === 'unlink' ? 'gg-btn-danger' : 'gg-btn-primary';
-        const metaTitle = String(title || '').trim();
-        const maxEditTitleLength = 46;
-        const truncatedMetaTitle = metaTitle.length > maxEditTitleLength
-            ? `${metaTitle.slice(0, maxEditTitleLength - 3).trimEnd()}...`
-            : metaTitle;
-        const editLabel = truncatedMetaTitle ? `Edit "${truncatedMetaTitle}"` : 'Edit Meta';
-        const editTitle = metaTitle ? `Edit "${metaTitle}"` : 'Edit Meta';
-        const backdropWasVisible = Boolean(backdrop && backdrop.classList.contains('gg-visible'));
-        const backgroundModals = getVisibleModalElementsForDialogBlur();
-        setUiContext(dialog, action === 'unlink' ? 'danger' : (action === 'link' ? 'normal' : 'edit'));
-
-        dialog.innerHTML = `
-            <div class="gg-modal-header">Meta Actions</div>
-            <div class="gg-dialog-actions gg-meta-action-buttons">
-                ${canEdit ? `<button class="gg-btn-primary gg-btn-edit" id="gg-dialog-edit" title="${escapeHtml(editTitle)}"><span class="gg-dialog-edit-label">${escapeHtml(editLabel)}</span></button>` : ''}
-                ${canEdit && action ? '<hr class="gg-modal-divider gg-meta-action-divider">' : ''}
-                ${action ? `<button class="${actionClass}" id="gg-dialog-toggle">${escapeHtml(actionLabel)}</button>` : ''}
-                <button class="gg-btn-secondary" id="gg-dialog-cancel">Cancel</button>
-            </div>
-        `;
-
-        showBackdrop();
-        backgroundModals.forEach(modal => modal.classList.add('gg-modal-background-blurred'));
-        dialog.style.display = 'block';
-
-        return new Promise(resolve => {
-            const close = (result) => {
-                backdrop?.removeEventListener('click', onBackdropClick);
-                dialog.style.display = 'none';
-                dialog.innerHTML = '';
-                backgroundModals.forEach(modal => modal.classList.remove('gg-modal-background-blurred'));
-                if (!backdropWasVisible) hideBackdrop();
-                resolve(result);
-            };
-
-            // Clicking outside the menu closes it (same as cancelling). The
-            // global backdrop handler ignores clicks while a dialog is open,
-            // so this menu has to handle it itself. Stop propagation so the
-            // global handler can never also close the modals underneath.
-            const onBackdropClick = (event) => {
-                if (event.target !== backdrop) return;
-                event.stopImmediatePropagation();
-                close(null);
-            };
-            backdrop?.addEventListener('click', onBackdropClick);
-
-            const cancelBtn = dialog.querySelector('#gg-dialog-cancel');
-            const editBtn = dialog.querySelector('#gg-dialog-edit');
-            const toggleBtn = dialog.querySelector('#gg-dialog-toggle');
-
-            cancelBtn.addEventListener('click', () => close(null), { once: true });
-            if (editBtn) editBtn.addEventListener('click', () => close('edit'), { once: true });
-            if (toggleBtn) toggleBtn.addEventListener('click', () => close(action), { once: true });
-
-            requestAnimationFrame(() => (toggleBtn || editBtn || cancelBtn).focus());
+    // --- UI Construction ---
+    // Typing in a form must not trigger the game's keyboard shortcuts.
+    function keepKeysInsideInputs(container) {
+        container.querySelectorAll('input, textarea').forEach(input => {
+            ['keydown', 'keypress', 'keyup'].forEach(type => {
+                input.addEventListener(type, event => event.stopPropagation());
+            });
         });
     }
 
-    // --- UI Construction ---
     function createHUD() {
         if (document.getElementById('gg-meta-hud')) return;
 
@@ -4747,7 +3275,7 @@
             hudSortSelect.addEventListener('change', (e) => {
                 hudSortMode = HUD_SORT_MODES.includes(e.target.value) ? e.target.value : 'precision';
                 try {
-                    localStorage.setItem(HUD_SORT_STORAGE_KEY, hudSortMode);
+                    writeStoredValue(HUD_SORT_STORAGE_KEY, hudSortMode);
                 } catch (err) {
                     console.warn('[BetterMetas] Could not save the panel sort mode:', err);
                 }
@@ -4834,7 +3362,7 @@
                 hud.classList.remove('gg-dragging');
 
                 const size = getCurrentHudSize(hud);
-                localStorage.setItem(HUD_SIZE_STORAGE_KEY, JSON.stringify(size));
+                writeStoredValue(HUD_SIZE_STORAGE_KEY, JSON.stringify(size));
             };
 
             document.addEventListener('pointermove', onPointerMove);
@@ -4900,13 +3428,6 @@
         `;
         document.body.appendChild(settingsModal);
 
-        // Stop propagation for Settings inputs
-        const settInputs = settingsModal.querySelectorAll('input');
-        settInputs.forEach(input => {
-            input.addEventListener('keydown', (e) => e.stopPropagation());
-            input.addEventListener('keypress', (e) => e.stopPropagation());
-            input.addEventListener('keyup', (e) => e.stopPropagation());
-        });
         // ADMIN MODAL
         const adminModal = document.createElement('div');
         adminModal.id = 'gg-meta-admin-modal';
@@ -4994,11 +3515,7 @@
         `;
         document.body.appendChild(adminModal);
 
-        adminModal.querySelectorAll('input, textarea').forEach(input => {
-            input.addEventListener('keydown', (e) => e.stopPropagation());
-            input.addEventListener('keypress', (e) => e.stopPropagation());
-            input.addEventListener('keyup', (e) => e.stopPropagation());
-        });
+        keepKeysInsideInputs(adminModal);
 
         adminModal.querySelector('#gg-admin-scope-presets').addEventListener('click', (e) => {
             const target = getEventElementTarget(e);
@@ -5173,20 +3690,14 @@
         modal.querySelector('#meta-details-btn').addEventListener('click', showDetails);
         modal.querySelector('#meta-back-btn').addEventListener('click', hideDetails);
 
-        // Stop propagation for inputs to prevent game shortcuts
-        const inputs = modal.querySelectorAll('input, textarea');
-        inputs.forEach(input => {
-            input.addEventListener('keydown', (e) => e.stopPropagation());
-            input.addEventListener('keypress', (e) => e.stopPropagation());
-            input.addEventListener('keyup', (e) => e.stopPropagation());
-        });
+        keepKeysInsideInputs(modal);
 
         document.body.appendChild(modal);
         initLandscapeImport('create');
         initLandscapeImport('admin');
 
         // Event Listeners
-        document.getElementById('gg-meta-admin-btn').addEventListener('click', async () => {
+        document.getElementById('gg-meta-admin-btn').addEventListener('click', () => {
             selectedAdminMetaId = null;
             adminSortMode = 'newest';
             const searchInput = document.getElementById('gg-admin-search');
@@ -5199,20 +3710,11 @@
             requestAnimationFrame(() => searchInput.focus());
         });
 
-        document.getElementById('gg-meta-add-btn').addEventListener('click', async () => {
+        document.getElementById('gg-meta-add-btn').addEventListener('click', () => {
             syncPanoidForUserAction('open add modal');
 
-            // Try to recover Panoid if missing (e.g. script loaded late on result screen)
-            if (!currentPanoid) {
-                updateStatus('Finding location...');
-                await tryRecoverPanoid();
-            }
-
-            // Allow opening even without active location for testing, but warn
-            if (!currentPanoid) {
-                console.log('No active location found even after recovery attempt.');
-                // Optional: Alert user?
-            }
+            // Opening without an active location is allowed (for testing); linking
+            // then asks for a result screen.
             showMetaModal();
             setUiContext(modal, 'normal');
             document.getElementById('meta-main-view').classList.remove('gg-hidden');
@@ -5226,33 +3728,29 @@
             requestAnimationFrame(() => searchInput.focus());
         });
 
+        // Settings pills are re-rendered each time the modal opens: one delegated
+        // listener per container. Only the UI state is toggled here, nothing is saved
+        // until "Save Changes".
+        ['gg-settings-scope-filter', 'gg-settings-tag-filter'].forEach(id => {
+            document.getElementById(id).addEventListener('click', event => {
+                getEventElementTarget(event)?.closest('.gg-tag-pill')?.classList.toggle('gg-tag-selected');
+            });
+        });
+
+        // Clicking a meta title in the panel opens it in the editor.
+        document.getElementById('gg-meta-container').addEventListener('click', event => {
+            const title = getEventElementTarget(event)?.closest('.gg-clickable-meta-title');
+            if (title) openMetaEditorFromTitle(title.dataset.metaId);
+        });
+
         document.getElementById('gg-settings-btn').addEventListener('click', () => {
             // Render Scope Filter
             const scopeContainer = document.getElementById('gg-settings-scope-filter');
             scopeContainer.innerHTML = renderScopePills(ALL_SCOPES, activeScopes);
 
-            // Add listeners
-            scopeContainer.querySelectorAll('.gg-tag-pill').forEach(pill => {
-                pill.addEventListener('click', (e) => {
-                    const target = getEventElementTarget(e);
-                    if (!target) return;
-                    // Only toggle UI state, do NOT save yet
-                    target.classList.toggle('gg-tag-selected');
-                });
-            });
-
             // Render Tag Filter
             const tagContainer = document.getElementById('gg-settings-tag-filter');
             tagContainer.innerHTML = renderTagFilterPills(TAG_PRESETS, activeTags);
-
-            tagContainer.querySelectorAll('.gg-tag-pill').forEach(pill => {
-                pill.addEventListener('click', (e) => {
-                    const target = getEventElementTarget(e);
-                    if (!target) return;
-                    // Only toggle UI state, do NOT save yet
-                    target.classList.toggle('gg-tag-selected');
-                });
-            });
 
             hidePreviewPopup();
             showSettingsModal();
@@ -5265,7 +3763,7 @@
                                          .map(el => el.dataset.value);
 
              activeScopes = new Set(selectedFromUI);
-             localStorage.setItem(ACTIVE_SCOPES_STORAGE_KEY, JSON.stringify(Array.from(activeScopes)));
+             writeStoredValue(ACTIVE_SCOPES_STORAGE_KEY, JSON.stringify(Array.from(activeScopes)));
 
              // Save Tags from UI state
              const tagContainer = document.getElementById('gg-settings-tag-filter');
@@ -5273,7 +3771,7 @@
                                          .map(el => el.dataset.value);
 
              activeTags = new Set(selectedTagsFromUI);
-             localStorage.setItem(ACTIVE_TAGS_STORAGE_KEY, JSON.stringify(Array.from(activeTags)));
+             writeStoredValue(ACTIVE_TAGS_STORAGE_KEY, JSON.stringify(Array.from(activeTags)));
 
              // Refresh HUD
              if (currentPanoid) refreshDisplay();
@@ -5360,12 +3858,15 @@
     }
 
     // Sizes a sort <select> to the text of its selected option.
+    let textMeasureContext = null;
+
     function resizeSortSelectToContent(sortSelect) {
         if (!sortSelect) return;
         const selectedOption = sortSelect.selectedOptions[0];
         if (!selectedOption) return;
 
-        const context = document.createElement('canvas').getContext('2d');
+        textMeasureContext ||= document.createElement('canvas').getContext('2d');
+        const context = textMeasureContext;
         if (!context) return;
 
         const styles = getComputedStyle(sortSelect);
@@ -5422,7 +3923,7 @@
     const HUD_SORT_MODES = ['precision', 'newest', 'title', 'scope', 'tags'];
     let hudSortMode = (() => {
         try {
-            const saved = localStorage.getItem(HUD_SORT_STORAGE_KEY);
+            const saved = readStoredValue(HUD_SORT_STORAGE_KEY);
             return HUD_SORT_MODES.includes(saved) ? saved : 'precision';
         } catch (err) {
             return 'precision';
@@ -5441,13 +3942,10 @@
         return searchTerm.toLowerCase().split(/[;,]/).map(term => term.trim()).filter(Boolean);
     }
 
-    function matchesMetaSearch(meta, terms, extraValues = []) {
+    function matchesMetaSearch(meta, terms) {
         if (terms.length === 0) return true;
         const indexedContent = ensureMetaSearchIndex().get(meta.id) || '';
-        const searchableContent = extraValues.length
-            ? `${indexedContent} ${extraValues.filter(Boolean).join(' ').toLowerCase()}`
-            : indexedContent;
-        return terms.every(term => searchableContent.includes(term));
+        return terms.every(term => indexedContent.includes(term));
     }
 
     function resetIncrementalList(container, html = '') {
@@ -5588,15 +4086,9 @@
 
         const terms = getMetaSearchTerms(searchTerm);
 
-        const filtered = metasData.map((meta, index) => ({ meta, index })).filter(entry => {
-            const meta = entry.meta;
-            const source = getAdminMetaSourceLabel(getAdminMetaSource(meta.id));
-            return matchesMetaSearch(meta, terms, [
-                meta.id || '',
-                source,
-                meta.scope || '',
-            ]);
-        });
+        const filtered = metasData
+            .map((meta, index) => ({ meta, index }))
+            .filter(entry => matchesMetaSearch(entry.meta, terms));
 
         const sorted = sortAdminMetaEntries(filtered);
 
@@ -5681,79 +4173,71 @@
             ? { ...existingMeta, scope: newScope, updatedAt: new Date().toISOString() }
             : null;
 
-        const finishUi = beginMutationUi({
-            scope: adminModal,
-            button: btn,
-            busyText: isLinked ? 'Unlinking...' : 'Linking...',
-            statusText: isLinked ? 'Removing meta...' : 'Linking meta...'
-        });
-        if (!finishUi) return;
-
-        if (!isLinked) await waitForScopeGeocoding(newScope || existingMeta?.scope);
-
-        const snapshot = createLocalDataSnapshot();
-
-        try {
-            if (isLinked) {
-                applyLocalLocationUnlinks(panoid, [metaId]);
-                updateStatus('Unlinked. Syncing...');
-                await updateLocalJsonFile(
-                    USER_LOCATIONS_FILE,
-                    normalizeLocationMap,
-                    locations => {
-                        removeMetaIdsFromPanoidLocations(locations, panoid, [metaId]);
-                        return locations;
-                    },
-                    `Unlink 1 meta from ${panoid} via BetterMetas`
-                );
-                updateStatus('Unlinked!');
-            } else {
-                if (scopeUpdatedMeta) {
-                    if (getAdminMetaSource(metaId) !== 'user') {
-                        throw new Error(`Unknown meta source for ${metaId}`);
-                    }
-                    applyAdminMetaLocally(scopeUpdatedMeta);
-                    renderAdminMetas(document.getElementById('gg-admin-search')?.value || '');
-                }
-                applyLocalLocationLinks(panoid, [metaId], formScope);
-                updateStatus('Linked. Syncing...');
-                if (scopeUpdatedMeta) {
-                    await updateLocalJsonFileIfChanged(
-                        USER_METAS_FILE,
-                        normalizeMetaList,
-                        metas => {
-                            let found = false;
-                            const updatedMetas = metas.map(meta => {
-                                if (meta.id !== metaId) return meta;
-                                found = true;
-                                return { ...meta, scope: scopeUpdatedMeta.scope, updatedAt: scopeUpdatedMeta.updatedAt };
-                            });
-                            if (!found) throw new Error(`Meta not found in ${USER_METAS_FILE}: ${metaId}`);
-                            return updatedMetas;
+        const succeeded = await runMutation({
+            ui: {
+                scope: adminModal,
+                button: btn,
+                busyText: isLinked ? 'Unlinking...' : 'Linking...',
+                statusText: isLinked ? 'Removing meta...' : 'Linking meta...'
+            },
+            failTitle: isLinked ? 'Unlink Failed' : 'Link Failed',
+            prepare: () => (isLinked ? null : waitForScopeGeocoding(newScope || existingMeta?.scope)),
+            run: async () => {
+                if (isLinked) {
+                    applyLocalLocationUnlinks(panoid, [metaId]);
+                    updateStatus('Unlinked. Syncing...');
+                    await updateLocalJsonFile(
+                        USER_LOCATIONS_FILE,
+                        normalizeLocationMap,
+                        locations => {
+                            removeMetaIdsFromPanoidLocations(locations, panoid, [metaId]);
+                            return locations;
                         },
-                        `Update scope of meta ${metaId} to ${scopeUpdatedMeta.scope} via BetterMetas`
+                        `Unlink 1 meta from ${panoid} via BetterMetas`
                     );
+                    updateStatus('Unlinked!');
+                } else {
+                    if (scopeUpdatedMeta) {
+                        if (!isUserMeta(metaId)) {
+                            throw new Error(`Unknown meta ${metaId}`);
+                        }
+                        applyAdminMetaLocally(scopeUpdatedMeta);
+                        renderAdminMetas(document.getElementById('gg-admin-search')?.value || '');
+                    }
+                    applyLocalLocationLinks(panoid, [metaId], formScope);
+                    updateStatus('Linked. Syncing...');
+                    if (scopeUpdatedMeta) {
+                        await updateLocalJsonFileIfChanged(
+                            USER_METAS_FILE,
+                            normalizeMetaList,
+                            metas => {
+                                let found = false;
+                                const updatedMetas = metas.map(meta => {
+                                    if (meta.id !== metaId) return meta;
+                                    found = true;
+                                    return { ...meta, scope: scopeUpdatedMeta.scope, updatedAt: scopeUpdatedMeta.updatedAt };
+                                });
+                                if (!found) throw new Error(`Meta not found in ${USER_METAS_FILE}: ${metaId}`);
+                                return updatedMetas;
+                            },
+                            `Update scope of meta ${metaId} to ${scopeUpdatedMeta.scope} via BetterMetas`
+                        );
+                    }
+                    await updateLocalJsonFile(
+                        USER_LOCATIONS_FILE,
+                        normalizeLocationMap,
+                        locations => {
+                            addMetaIdsToLocationMap(locations, panoid, [metaId], formScope);
+                            return locations;
+                        },
+                        `Link 1 meta to ${panoid} via BetterMetas`
+                    );
+                    updateStatus('Linked!');
                 }
-                await updateLocalJsonFile(
-                    USER_LOCATIONS_FILE,
-                    normalizeLocationMap,
-                    locations => {
-                        addMetaIdsToLocationMap(locations, panoid, [metaId], formScope);
-                        return locations;
-                    },
-                    `Link 1 meta to ${panoid} via BetterMetas`
-                );
-                updateStatus('Linked!');
+                scheduleBackgroundDataRefresh();
             }
-            scheduleBackgroundDataRefresh();
-        } catch (e) {
-            console.error(e);
-            restoreLocalDataSnapshot(snapshot);
-            await showToolAlert(isLinked ? 'Unlink Failed' : 'Link Failed', e.message);
-            updateStatus(isLinked ? 'Unlink Failed' : 'Link Failed');
-        } finally {
-            finishUi();
-        }
+        });
+        if (succeeded === null) return;
 
         updateAdminLinkButton();
         renderAdminLinkedLocations(metaId);
@@ -5844,106 +4328,50 @@
         }
 
         const linkBtn = document.getElementById('gg-link-selected-btn');
-        const finishUi = beginMutationUi({
-            scope: document.getElementById('gg-meta-modal'),
-            button: linkBtn,
-            busyText: 'Linking...',
-            statusText: `Linking ${metaIds.length} metas...`
-        });
-        if (!finishUi) return;
 
-        for (const scopeToWait of new Set(metaIds.map(id => normalizeScope(getMetaById(id)?.scope)))) {
-            await waitForScopeGeocoding(scopeToWait);
-        }
+        const succeeded = await runMutation({
+            ui: {
+                scope: document.getElementById('gg-meta-modal'),
+                button: linkBtn,
+                busyText: 'Linking...',
+                statusText: `Linking ${metaIds.length} metas...`
+            },
+            failTitle: 'Link Failed',
+            prepare: async () => {
+                for (const scopeToWait of new Set(metaIds.map(id => normalizeScope(getMetaById(id)?.scope)))) {
+                    await waitForScopeGeocoding(scopeToWait);
+                }
+            },
+            run: async () => {
+                const unknownMetaIds = metaIds.filter(id => !userMetaIds.has(id));
 
-        const snapshot = createLocalDataSnapshot();
-        let linkedSuccessfully = false;
+                if (unknownMetaIds.length > 0) {
+                    throw new Error(`Unknown meta IDs: ${unknownMetaIds.join(', ')}`);
+                }
 
-        try {
-            const unknownMetaIds = metaIds.filter(id => !userMetaIds.has(id));
-
-            if (unknownMetaIds.length > 0) {
-                throw new Error(`Unknown meta IDs: ${unknownMetaIds.join(', ')}`);
-            }
-
-            applyLocalLocationLinks(panoid, metaIds);
-            updateStatus('Linked. Syncing...');
-            renderExistingMetas(document.getElementById('meta-search')?.value || '');
-
-            await updateLocalJsonFile(
-                USER_LOCATIONS_FILE,
-                normalizeLocationMap,
-                locations => {
-                    addMetaIdsToLocationMap(locations, panoid, metaIds);
-                    return locations;
-                },
-                `Link ${metaIds.length} metas to ${panoid} via BetterMetas`
-            );
-
-            updateStatus('Linked!');
-            linkedSuccessfully = true;
-            scheduleBackgroundDataRefresh();
-        } catch (e) {
-            console.error(e);
-            restoreLocalDataSnapshot(snapshot);
-            await showToolAlert('Link Failed', e.message);
-            updateStatus('Link Failed');
-        } finally {
-            finishUi();
-            if (linkedSuccessfully) {
-                selectedMetaIds.clear();
-                updateLinkSelectedBtn();
+                applyLocalLocationLinks(panoid, metaIds);
+                updateStatus('Linked. Syncing...');
                 renderExistingMetas(document.getElementById('meta-search')?.value || '');
+
+                await updateLocalJsonFile(
+                    USER_LOCATIONS_FILE,
+                    normalizeLocationMap,
+                    locations => {
+                        addMetaIdsToLocationMap(locations, panoid, metaIds);
+                        return locations;
+                    },
+                    `Link ${metaIds.length} metas to ${panoid} via BetterMetas`
+                );
+
+                updateStatus('Linked!');
+                scheduleBackgroundDataRefresh();
             }
-        }
-    }
-
-    async function unlinkMultipleMetas(metaIds) {
-        const panoid = syncPanoidForUserAction('unlink metas');
-        if (!panoid || panoid === MISSING_PANOID_PLACEHOLDER) {
-            await showToolAlert('No Location Detected', 'Please try on a game result screen.');
-            return;
-        }
-
-        const linkedUserMetaIds = getLinkedMetaIdsForPanoid(userLocationMap, panoid);
-        const removableMetaIds = metaIds.filter(id => linkedUserMetaIds.has(id));
-        if (removableMetaIds.length === 0) {
-            await showToolAlert('Cannot Unlink Meta', 'This meta is not linked through your BetterMetas data and cannot be unlinked here.');
-            return;
-        }
-
-        const finishUi = beginMutationUi({
-            scope: document.getElementById('gg-meta-hud'),
-            busyText: 'Unlinking...',
-            statusText: `Removing ${removableMetaIds.length} meta${removableMetaIds.length === 1 ? '' : 's'}...`
         });
-        if (!finishUi) return;
-
-        const snapshot = createLocalDataSnapshot();
-
-        try {
-            applyLocalLocationUnlinks(panoid, removableMetaIds);
-            updateStatus('Unlinked. Syncing...');
-
-            await updateLocalJsonFile(
-                USER_LOCATIONS_FILE,
-                normalizeLocationMap,
-                locations => {
-                    removeMetaIdsFromPanoidLocations(locations, panoid, removableMetaIds);
-                    return locations;
-                },
-                `Unlink ${removableMetaIds.length} metas from ${panoid} via BetterMetas`
-            );
-
-            updateStatus('Unlinked!');
-            scheduleBackgroundDataRefresh();
-        } catch (e) {
-            console.error(e);
-            restoreLocalDataSnapshot(snapshot);
-            await showToolAlert('Unlink Failed', e.message);
-            updateStatus('Unlink Failed');
-        } finally {
-            finishUi();
+        if (succeeded === null) return;
+        if (succeeded) {
+            selectedMetaIds.clear();
+            updateLinkSelectedBtn();
+            renderExistingMetas(document.getElementById('meta-search')?.value || '');
         }
     }
 
@@ -5974,45 +4402,105 @@
         );
         if (!confirmed) return;
 
-        const finishUi = beginMutationUi({
-            scope: document.getElementById('gg-meta-admin-modal'),
-            busyText: 'Unlinking...',
-            statusText: `Unlinking ${panoid}...`
+        const succeeded = await runMutation({
+            ui: {
+                scope: document.getElementById('gg-meta-admin-modal'),
+                busyText: 'Unlinking...',
+                statusText: `Unlinking ${panoid}...`
+            },
+            failTitle: 'Unlink Failed',
+            run: async () => {
+                userLocationMap = { ...userLocationMap };
+                removeMetaIdsFromLocationMap(userLocationMap, panoid, [metaId]);
+                proximityIndexDirty = true;
+                renderAdminLinkedLocations(metaId);
+                if (currentPanoid === panoid) refreshDisplay();
+                updateStatus('Unlinked. Syncing...');
+
+                await updateLocalJsonFile(
+                    USER_LOCATIONS_FILE,
+                    normalizeLocationMap,
+                    locations => {
+                        removeMetaIdsFromLocationMap(locations, panoid, [metaId]);
+                        return locations;
+                    },
+                    `Unlink meta ${metaId} from ${panoid} via BetterMetas`
+                );
+
+                updateStatus('Unlinked!');
+                scheduleBackgroundDataRefresh();
+            }
         });
-        if (!finishUi) return;
-
-        const snapshot = createLocalDataSnapshot();
-
-        try {
-            userLocationMap = { ...userLocationMap };
-            removeMetaIdsFromLocationMap(userLocationMap, panoid, [metaId]);
-            proximityIndexDirty = true;
-            renderAdminLinkedLocations(metaId);
-            if (currentPanoid === panoid) refreshDisplay();
-            updateStatus('Unlinked. Syncing...');
-
-            await updateLocalJsonFile(
-                USER_LOCATIONS_FILE,
-                normalizeLocationMap,
-                locations => {
-                    removeMetaIdsFromLocationMap(locations, panoid, [metaId]);
-                    return locations;
-                },
-                `Unlink meta ${metaId} from ${panoid} via BetterMetas`
-            );
-
-            updateStatus('Unlinked!');
-            scheduleBackgroundDataRefresh();
-        } catch (e) {
-            console.error(e);
-            restoreLocalDataSnapshot(snapshot);
-            await showToolAlert('Unlink Failed', e.message);
-            updateStatus('Unlink Failed');
-        } finally {
-            finishUi();
-        }
+        if (succeeded === null) return;
 
         updateAdminLinkButton();
+    }
+
+    // Removes ONE road from the road list of a segment entry. Removing the last road
+    // is the same as unlinking the whole location.
+    async function removeRoadFromAdminSegment(metaId, panoid, road) {
+        if (!metaId || !panoid || !road) return;
+
+        const entry = normalizeLocationEntry((userLocationMap || {})[panoid]);
+        const roadKey = normalizeRoadKey(road);
+        const roads = entry && entry.segment ? getSegmentRoadList(entry.road) : [];
+        if (!roads.some(r => normalizeRoadKey(r) === roadKey)) {
+            renderAdminLinkedLocations(metaId);
+            return;
+        }
+        if (roads.length <= 1) {
+            await unlinkMetaFromAdminLocation(metaId, panoid);
+            return;
+        }
+
+        const confirmed = await showToolConfirm(
+            'Remove Road',
+            `Remove the road "${road}" from this segment? The segment keeps its other roads.`,
+            { confirmText: 'Remove', cancelText: 'Cancel', danger: true }
+        );
+        if (!confirmed) return;
+
+        const withoutRoad = list => getSegmentRoadList(list).filter(r => normalizeRoadKey(r) !== roadKey);
+
+        await runMutation({
+            ui: {
+                scope: document.getElementById('gg-meta-admin-modal'),
+                busyText: 'Removing...',
+                statusText: `Removing road ${road}...`
+            },
+            failTitle: 'Remove Failed',
+            run: async () => {
+                userLocationMap = { ...userLocationMap, [panoid]: { ...userLocationMap[panoid], road: withoutRoad(entry.road) } };
+                proximityIndexDirty = true;
+
+                // A pending copy of the entry would put the road back when merged.
+                const pending = loadPendingLocalChanges();
+                if (pending.locations[panoid] && !Array.isArray(pending.locations[panoid])) {
+                    pending.locations[panoid] = { ...pending.locations[panoid], road: withoutRoad(pending.locations[panoid].road) };
+                    savePendingLocalChanges(pending);
+                }
+
+                renderAdminLinkedLocations(metaId);
+                if (currentPanoid === panoid) refreshDisplay();
+                updateStatus('Road removed. Syncing...');
+
+                await updateLocalJsonFile(
+                    USER_LOCATIONS_FILE,
+                    normalizeLocationMap,
+                    locations => {
+                        const target = locations[panoid];
+                        if (target && !Array.isArray(target) && target.segment) {
+                            target.road = withoutRoad(target.road);
+                        }
+                        return locations;
+                    },
+                    `Remove road ${road} from segment ${panoid} via BetterMetas`
+                );
+
+                updateStatus('Road removed!');
+                scheduleBackgroundDataRefresh();
+            }
+        });
     }
 
     async function generateJSON() {
@@ -6035,41 +4523,11 @@
             return;
         }
 
-        // An image import needs the country (folder name); wait for geocoding.
-        const needsImageImport = rawImageValue.trim() && !isLocalImagePath(rawImageValue);
-        const detectedCountryFolder = needsImageImport ? await waitForDetectedCountryFolder() : null;
-        await waitForScopeGeocoding(scope);
-
-        // Generate unique meta ID
-        const metaId = generateMetaId();
-        const imageUrl = await resolveImageForSave(rawImageValue, detectedCountryFolder || getCountryFolderForLocation(getCurrentLocationSnapshot()) || getCountrySlugForMeta({ id: metaId }));
-        // Metas created here are always linked to a location right away, and
-        // that location entry stores lat/lng/country/nominatimCountry plus the
-        // scope-relevant field (region/city/road) based on the meta's scope
-        // (see ensureLocationEntry/getLocationSnapshotForScope). Don't duplicate
-        // those fields onto the meta itself - user_locations.json is the
-        // single source of truth for them.
-
-        const newMeta = {
-            id: metaId,
-            title: title,
-            description: desc,
-            imageUrl: imageUrl,
-            scope: scope,
-            tags: tags,
-            updatedAt: new Date().toISOString()
-        };
-
-        // Kept around as a readable backup blob if the local save fails.
-        const submission = {
-            action: "add_meta",
-            panoid: panoid,
-            meta: newMeta
-        };
-
         const btn = document.getElementById('meta-generate-btn');
         const output = document.getElementById('gg-json-output');
 
+        // The busy state starts before the image import below, so a second click
+        // cannot start a second save (and a second import) while this one runs.
         const finishUi = beginMutationUi({
             scope: document.getElementById('gg-meta-modal'),
             button: btn,
@@ -6079,9 +4537,37 @@
         if (!finishUi) return;
 
         output.style.display = 'none';
-        const snapshot = createLocalDataSnapshot();
+        let snapshot = null;
+        let imageUrl = null;
+        let newMeta = null;
+        let metaPersisted = false; // user_metas.json already holds the meta
 
         try {
+            // An image import needs the country (folder name); wait for geocoding.
+            const needsImageImport = rawImageValue.trim() && !isLocalImagePath(rawImageValue);
+            const detectedCountryFolder = needsImageImport ? await waitForDetectedCountryFolder() : null;
+            await waitForScopeGeocoding(scope);
+
+            // Generate unique meta ID
+            const metaId = generateMetaId();
+            imageUrl = await resolveImageForSave(rawImageValue, detectedCountryFolder || getCountryFolderForLocation(getCurrentLocationSnapshot()) || getCountrySlugForMeta({ id: metaId }));
+            // Metas created here are always linked to a location right away, and
+            // that location entry stores lat/lng/country/nominatimCountry plus the
+            // scope-relevant field (region/city/road) based on the meta's scope
+            // (see ensureLocationEntry/getLocationSnapshotForScope). Don't duplicate
+            // those fields onto the meta itself - user_locations.json is the
+            // single source of truth for them.
+            newMeta = {
+                id: metaId,
+                title: title,
+                description: desc,
+                imageUrl: imageUrl,
+                scope: scope,
+                tags: tags,
+                updatedAt: new Date().toISOString()
+            };
+
+            snapshot = createLocalDataSnapshot();
             applyLocalSavedMeta(newMeta, panoid);
             if (landscapeCenters) applyLocalLandscapeCenters(newMeta.id, landscapeCenters);
             updateStatus('Saved. Syncing...');
@@ -6100,6 +4586,7 @@
                 },
                 `Add meta ${newMeta.id} via BetterMetas`
             );
+            metaPersisted = true;
 
             updateStatus('Saving user_locations.json...');
             await updateLocalJsonFile(
@@ -6121,9 +4608,14 @@
 
         } catch (err) {
             console.error('Save error:', err);
-            restoreLocalDataSnapshot(snapshot);
+            if (snapshot) restoreLocalDataSnapshot(snapshot);
+            // The image was imported before the save: drop it again unless the saved
+            // meta (or another one) uses it.
+            if (!metaPersisted) await removeImageIfUnused(imageUrl);
             showMetaModal();
-            output.textContent = `Error saving locally:\n${err.message}\n\nBackup JSON:\n${stringifyJsonContent(submission)}`;
+            // Kept around as a readable backup blob if the local save fails.
+            const backup = newMeta ? `\n\nBackup JSON:\n${stringifyJsonContent({ action: 'add_meta', panoid, meta: newMeta })}` : '';
+            output.textContent = `Error saving locally:\n${err.message}${backup}`;
             output.style.display = 'block';
             await showToolAlert('Save Failed', err.message);
             finishUi();
@@ -6146,17 +4638,18 @@
             return;
         }
 
-        const updatedMeta = await getAdminMetaFromForm(existingMeta);
-        if (!updatedMeta.title || !updatedMeta.description) {
+        // Validate before anything touches the disk (the image import below writes a file).
+        const form = readAdminMetaForm();
+        if (!form.title || !form.description) {
             await showToolAlert('Missing Details', 'Please fill in Title and Description.');
             return;
         }
 
         // Captured now: reopening the details view (below) resets the pending import.
-        const landscapeImport = isLandscapeScope(updatedMeta.scope) ? landscapeCenterState.admin : null;
-        const landscapeCenters = buildLandscapeCenters(landscapeImport, updatedMeta.scope);
+        const landscapeImport = isLandscapeScope(form.scope) ? landscapeCenterState.admin : null;
+        const landscapeCenters = buildLandscapeCenters(landscapeImport, form.scope);
 
-        const source = getAdminMetaSource(existingMeta.id);
+        const isUserOwned = isUserMeta(existingMeta.id);
         const saveBtn = document.getElementById('gg-admin-save-btn');
         const finishUi = beginMutationUi({
             scope: document.getElementById('gg-meta-admin-modal'),
@@ -6166,7 +4659,19 @@
         });
         if (!finishUi) return;
 
-        if (source === 'user' && normalizeScope(updatedMeta.scope) !== normalizeScope(existingMeta.scope)) {
+        // Imports a remote image to disk: only done once the busy state blocks a second save.
+        let updatedMeta;
+        try {
+            updatedMeta = await buildAdminMeta(existingMeta, form);
+        } catch (err) {
+            console.error(err);
+            await showToolAlert('Save Failed', err.message || String(err));
+            updateStatus('Save Failed');
+            finishUi();
+            return;
+        }
+
+        if (isUserOwned && normalizeScope(updatedMeta.scope) !== normalizeScope(existingMeta.scope)) {
             await waitForScopeGeocoding(updatedMeta.scope);
         }
 
@@ -6174,6 +4679,7 @@
         const previousImagePath = String(existingMeta.imageUrl || '').trim();
         const newImagePath = String(updatedMeta.imageUrl || '').trim();
         let previousImageStillUsed = true; // Safe default: never delete unless proven unused.
+        let metaPersisted = false; // user_metas.json already holds the edited meta
 
         try {
             const savedMetaId = existingMeta.id;
@@ -6182,7 +4688,7 @@
             // Scope changed: the location(s) the meta is linked to here must get the
             // fields of the new scope (region / city / road) instead of keeping the old ones.
             let relinkPanoid = null;
-            const scopeChanged = source === 'user' &&
+            const scopeChanged = isUserOwned &&
                 normalizeScope(existingMeta.scope) !== normalizeScope(updatedMeta.scope);
             if (scopeChanged) {
                 const panoid = syncPanoidForUserAction('update meta scope');
@@ -6194,7 +4700,7 @@
 
             // Landscape center: set/replace it for 100km/10km/1km, drop it for any other scope.
             const hadCenterEntry = hasLandscapeCenterEntry(userLocationMap, savedMetaId);
-            const removeCenter = source === 'user' && !landscapeCenters &&
+            const removeCenter = isUserOwned && !landscapeCenters &&
                 !isLandscapeScope(updatedMeta.scope) && hadCenterEntry;
             if (landscapeCenters) {
                 applyLocalLandscapeCenters(savedMetaId, landscapeCenters);
@@ -6207,7 +4713,7 @@
             if (currentPanoid) refreshDisplay();
             updateStatus('Meta saved. Syncing...');
 
-            if (source === 'user') {
+            if (isUserOwned) {
                 await updateLocalJsonFileIfChanged(
                     USER_METAS_FILE,
                     normalizeMetaList,
@@ -6226,6 +4732,7 @@
                     },
                     `Edit meta ${existingMeta.id} via BetterMetas`
                 );
+                metaPersisted = true;
 
                 if (relinkPanoid) {
                     await updateLocalJsonFileIfChanged(
@@ -6255,7 +4762,7 @@
                     );
                 }
             } else {
-                throw new Error(`Unknown meta source for ${existingMeta.id}`);
+                throw new Error(`Unknown meta ${existingMeta.id}`);
             }
 
             // Image replaced (or removed): drop the old imported file once nothing uses it.
@@ -6273,6 +4780,8 @@
         } catch (err) {
             console.error(err);
             restoreLocalDataSnapshot(snapshot);
+            // A freshly imported image is dropped again unless a saved meta uses it.
+            if (!metaPersisted && newImagePath !== previousImagePath) await removeImageIfUnused(newImagePath);
             landscapeCenterState.admin = landscapeImport; // keep the import so the user can retry
             refreshLandscapeImportUi('admin');
             await showToolAlert('Save Failed', err.message || String(err));
@@ -6288,10 +4797,10 @@
             return;
         }
 
-        const counts = getAdminMetaLocationCounts(existingMeta.id);
+        const locationCount = countAdminMetaLocations(existingMeta.id);
         const confirmed = await showToolConfirm(
             'Delete Meta',
-            `This will delete "${existingMeta.title || existingMeta.id}" and unlink it from ${counts.total} location${counts.total === 1 ? '' : 's'}.`,
+            `This will delete "${existingMeta.title || existingMeta.id}" and unlink it from ${locationCount} location${locationCount === 1 ? '' : 's'}.`,
             {
                 confirmText: 'Delete Meta',
                 cancelText: 'Cancel',
@@ -6300,72 +4809,66 @@
         );
         if (!confirmed) return;
 
-        const source = getAdminMetaSource(existingMeta.id);
+        const isUserOwned = isUserMeta(existingMeta.id);
         const actionBtn = actionButton || document.getElementById('gg-admin-delete-btn');
-        const finishUi = beginMutationUi({
-            scope: document.getElementById('gg-meta-admin-modal'),
-            button: actionBtn,
-            busyText: 'Deleting...',
-            statusText: `Deleting meta ${existingMeta.id}...`
-        });
-        if (!finishUi) return;
 
-        const snapshot = createLocalDataSnapshot();
         const deletedImagePath = String(existingMeta.imageUrl || '').trim();
         let deletedImageStillUsed = true; // Safe default: never delete unless proven unused.
 
-        try {
-            const deletedMetaId = existingMeta.id;
-            applyAdminDeleteLocally(deletedMetaId);
-            showAdminMainView();
-            renderAdminMetas(document.getElementById('gg-admin-search')?.value || '');
-            updateStatus('Deleted. Syncing...');
+        await runMutation({
+            ui: {
+                scope: document.getElementById('gg-meta-admin-modal'),
+                button: actionBtn,
+                busyText: 'Deleting...',
+                statusText: `Deleting meta ${existingMeta.id}...`
+            },
+            failTitle: 'Delete Failed',
+            run: async () => {
+                const deletedMetaId = existingMeta.id;
+                applyAdminDeleteLocally(deletedMetaId);
+                showAdminMainView();
+                renderAdminMetas(document.getElementById('gg-admin-search')?.value || '');
+                updateStatus('Deleted. Syncing...');
 
-            await updateLocalJsonFileIfChanged(
-                USER_LOCATIONS_FILE,
-                normalizeLocationMap,
-                locations => {
-                    removeMetaIdFromLocationEntries(locations, deletedMetaId);
-                    return locations;
-                },
-                `Remove user locations for ${deletedMetaId} via BetterMetas`
-            );
-
-            if (source === 'user') {
-                await updateLocalJsonFile(
-                    USER_METAS_FILE,
-                    normalizeMetaList,
-                    metas => {
-                        const updatedMetas = metas.filter(meta => meta.id !== deletedMetaId);
-                        if (updatedMetas.length === metas.length) {
-                            throw new Error(`Meta not found in ${USER_METAS_FILE}: ${deletedMetaId}`);
-                        }
-                        // Checked against the file's fresh content: is another meta
-                        // still using the same image?
-                        deletedImageStillUsed = updatedMetas.some(meta => String(meta.imageUrl || '').trim() === deletedImagePath);
-                        return updatedMetas;
+                await updateLocalJsonFileIfChanged(
+                    USER_LOCATIONS_FILE,
+                    normalizeLocationMap,
+                    locations => {
+                        removeMetaIdFromLocationEntries(locations, deletedMetaId);
+                        return locations;
                     },
-                    `Delete meta ${deletedMetaId} via BetterMetas`
+                    `Remove user locations for ${deletedMetaId} via BetterMetas`
                 );
-            } else {
-                throw new Error(`Unknown meta source for ${deletedMetaId}`);
+
+                if (isUserOwned) {
+                    await updateLocalJsonFile(
+                        USER_METAS_FILE,
+                        normalizeMetaList,
+                        metas => {
+                            const updatedMetas = metas.filter(meta => meta.id !== deletedMetaId);
+                            if (updatedMetas.length === metas.length) {
+                                throw new Error(`Meta not found in ${USER_METAS_FILE}: ${deletedMetaId}`);
+                            }
+                            // Checked against the file's fresh content: is another meta
+                            // still using the same image?
+                            deletedImageStillUsed = updatedMetas.some(meta => String(meta.imageUrl || '').trim() === deletedImagePath);
+                            return updatedMetas;
+                        },
+                        `Delete meta ${deletedMetaId} via BetterMetas`
+                    );
+                } else {
+                    throw new Error(`Unknown meta ${deletedMetaId}`);
+                }
+
+                // Remove the imported image (data/<country>/<file>) once nothing uses it.
+                if (!deletedImageStillUsed) await removeLocalImage(deletedImagePath);
+
+                refreshAfterAdminMutation().catch(err => {
+                    console.warn('[BetterMetas] Admin data refresh after delete failed:', err);
+                });
+                updateStatus('Meta deleted!');
             }
-
-            // Remove the imported image (data/<country>/<file>) once nothing uses it.
-            if (!deletedImageStillUsed) await removeLocalImage(deletedImagePath);
-
-            refreshAfterAdminMutation().catch(err => {
-                console.warn('[BetterMetas] Admin data refresh after delete failed:', err);
-            });
-            updateStatus('Meta deleted!');
-        } catch (err) {
-            console.error(err);
-            restoreLocalDataSnapshot(snapshot);
-            await showToolAlert('Delete Failed', err.message || String(err));
-            updateStatus('Delete Failed');
-        } finally {
-            finishUi();
-        }
+        });
     }
 
     function updateHUD(metas, predicted = []) {
@@ -6373,15 +4876,11 @@
         if (!container) return;
         const exactMetas = metas || [];
         const predictedMetas = predicted || [];
-        const canEditMetas = true;
-        const userLinkedMetaIds = getLinkedMetaIdsForPanoid(userLocationMap, currentPanoid);
         const renderKey = JSON.stringify([
             currentPanoid,
             metaRenderVersion,
-            canEditMetas,
             exactMetas.map(meta => meta.id),
-            predictedMetas.map(meta => meta.id),
-            exactMetas.filter(meta => userLinkedMetaIds.has(meta.id)).map(meta => meta.id)
+            predictedMetas.map(meta => meta.id)
         ]);
         if (renderKey === lastHudRenderKey) return;
         resetHudImageLoading(container);
@@ -6393,15 +4892,8 @@
         }
 
         const renderMeta = (m, isPredicted = false) => {
-             const isUserLinked = userLinkedMetaIds.has(m.id);
-             const titleAction = isPredicted ? 'link' : (isUserLinked ? 'unlink' : '');
              const titleText = m.title || m.id;
-             const titleTooltip = canEditMetas
-                 ? 'Click to Edit Meta'
-                 : (titleAction === 'link' ? 'Click to Link to this Location' : 'Click to Unlink from this Location');
-             const titleAttr = (titleAction || canEditMetas)
-                 ? `class="gg-clickable-meta-title" data-meta-id="${escapeHtml(m.id)}" data-meta-title="${escapeHtml(titleText)}" data-action="${escapeHtml(titleAction)}" title="${escapeHtml(titleTooltip)}"`
-                 : '';
+             const titleAttr = `class="gg-clickable-meta-title" data-meta-id="${escapeHtml(m.id)}" title="Click to Edit Meta"`;
 
              return `
             <div class="gg-meta-row ${isPredicted ? 'gg-meta-row-predicted' : ''}">
@@ -6421,11 +4913,6 @@
         container.innerHTML = exactHtml + predictedHtml;
         startHudImageLoading(container);
 
-        container.querySelectorAll('.gg-clickable-meta-title').forEach(titleEl => {
-            titleEl.addEventListener('click', () => {
-                win.handleMetaTitleClick(titleEl.dataset.metaId, titleEl.dataset.metaTitle || '', titleEl.dataset.action || '');
-            });
-        });
         lastHudRenderKey = renderKey;
     }
 
@@ -6442,10 +4929,6 @@
         requestAnimationFrame(() => document.getElementById('gg-admin-meta-title')?.focus());
         return Promise.resolve();
     }
-
-    win.handleMetaTitleClick = async function(metaId, title, action = '') {
-        await openMetaEditorFromTitle(metaId);
-    };
 
 
     function refreshDisplay() {
@@ -6480,14 +4963,20 @@
         // predicted metas. A linked meta whose scope/tags no longer match the
         // active filter (e.g. edited from countrywide to region) should
         // disappear just like it would if it had never been linked.
+        // A segment meta linked to this panoid is no exception: it only shows when the
+        // location is on one of its roads and inside its rectangle (evaluateProximityMetas).
+        const proximityMetas = evaluateProximityMetas();
+        const proximityIds = new Set(proximityMetas.map(m => m.id));
         const exactMetas = sortMetasForHud(metaIds.map(id => {
             const found = getMetaById(id);
             if (!found) console.warn('[BetterMetas] Could not find exact meta data for ID:', id);
             return found;
-        }).filter(Boolean).filter(isScopeActive).filter(isTagActive));
+        }).filter(Boolean)
+            .filter(m => normalizeScope(m.scope) !== 'segment' || proximityIds.has(m.id))
+            .filter(isScopeActive).filter(isTagActive));
 
         // Get predicted/nearby metas
-        const predictedMetas = sortMetasForHud(evaluateProximityMetas()
+        const predictedMetas = sortMetasForHud(proximityMetas
             .filter(pm => !metaIds.includes(pm.id))
             .filter(isScopeActive)
             .filter(isTagActive));
@@ -6577,7 +5066,7 @@
         const visiblePanoid = getStreetViewPanoid();
         const queuedPanoid = isValidPanoid(nextPanoid) ? nextPanoid : null;
         const activePanoid = visiblePanoid || queuedPanoid || currentPanoid;
-		console.log(visiblePanoid, queuedPanoid, activePanoid, isValidPanoid(activePanoid));
+        debugLog(`[BetterMetas] Panoids for ${reason}: visible=${visiblePanoid}, queued=${queuedPanoid}, active=${activePanoid}`);
 
         if (!isValidPanoid(activePanoid)) return null;
 
@@ -6597,10 +5086,6 @@
         return currentPanoid;
     }
 
-    async function tryRecoverPanoid() {
-        return syncPanoidForUserAction('panoid recovery');
-    }
-
     // --- Logic ---
     function getHaversineDistance(lat1, lon1, lat2, lon2) {
         const R = 6371; // km
@@ -6613,20 +5098,12 @@
         return R * c;
     }
 
+    const SCOPE_RADIUS_KM = { '1km': 1, '10km': 10, '100km': 100 };
+
+    // Radius of the distance scopes. Every other scope (countrywide, region, city,
+    // road, segment, unique) matches by name / geometry only, so its radius is 0.
     function getDistanceForScope(scope) {
-        const s = normalizeScope(scope);
-        if (s === '1km') return 1;
-        if (s === '10km') return 10;
-        if (s === '100km') return 100;
-
-        // Named scopes should match by NAME, not generic radius
-        if (s === 'region') return 0;
-        if (s === 'city') return 0;
-        if (s === 'road') return 0; // Strict Name Match Only (User request: no radius for road/region)
-        if (s === 'unique') return 0; // 0m tolerance
-
-        if (s === 'countrywide') return 0; // Strict Country Check Only
-        return 0;
+        return SCOPE_RADIUS_KM[normalizeScope(scope)] || 0;
     }
 
     const COUNTRY_ALIAS_MAP = {
@@ -6668,11 +5145,6 @@
         return target;
     }
 
-    /**
-     * Strict name matching for location names (accent/case-insensitive exact match).
-     * No generic-word filtering: the stored name must match the detected name exactly
-     * (after normalization).
-     */
     function stripDiacritics(value) {
         return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     }
@@ -6681,18 +5153,26 @@
         return stripDiacritics(String(value || '')).toLowerCase().trim();
     }
 
-    function isFuzzyNameMatch(a, b) {
+    /**
+     * Strict name matching for location names (accent/case-insensitive exact match).
+     * No generic-word filtering: the stored name must match the detected name exactly
+     * (after normalization). Empty names never match.
+     */
+    function isSameName(a, b) {
         if (!a || !b) return false;
         return normalizeNameForMatch(a) === normalizeNameForMatch(b);
     }
 
     /**
-     * Finds relevant metas for current location based on active scopes.
-     * Checks both exact distance matches and fuzzy name matches (Region/Road).
+     * Finds the metas relevant to the current location: distance scopes by haversine
+     * distance, name scopes (country / region / city / road) by exact normalized name,
+     * segments by road and rectangle.
      */
     function evaluateProximityMetas() {
         const curLat = normalizeCoordinate(currentLocationData.lat);
         const curLng = normalizeCoordinate(currentLocationData.lng);
+        if (curLat === null || curLng === null) return [];
+
         const curCountry = normalizeCountry(currentLocationData.country, curLat, curLng);
         const curNomCountry = normalizeCountry(currentLocationData.nominatimCountry, curLat, curLng);
         const curRegion = currentLocationData.region;
@@ -6701,7 +5181,11 @@
         const curRoads = getRoadScopeNames();
         const curRoadKeys = getRoadCandidateKeys(currentLocationData.roadSources);
 
-        if (curLat === null || curLng === null) return [];
+        // Names are normalized once here and once per data change in the index
+        // (see rebuildProximityIndexes), not on every comparison.
+        const curRegionKey = normalizeNameForMatch(curRegion);
+        const curCityKey = normalizeNameForMatch(curCity);
+        const curRoadNameKeys = curRoads.map(normalizeNameForMatch).filter(Boolean);
 
         const matchedMetaIds = new Set();
         const matches = [];
@@ -6720,44 +5204,40 @@
         if (proximityCacheKey === lastProximityCacheKey) return lastProximityMatches;
 
         // Helper: Check meta match against location
-        const checkMatch = (scope, entryLat, entryLng, entryCountry, entryRegion, entryCity, entryRoads) => {
+        const checkMatch = (scope, entry) => {
              scope = normalizeScope(scope);
 
              // 1. Distance Match
              const distLimit = getDistanceForScope(scope);
              if (distLimit > 0) {
-                 if (entryLat !== null && entryLng !== null) {
-                     const d = getHaversineDistance(curLat, curLng, entryLat, entryLng);
-                     if (d <= distLimit) return true;
+                 if (entry.lat !== null && entry.lng !== null) {
+                     return getHaversineDistance(curLat, curLng, entry.lat, entry.lng) <= distLimit;
                  }
                  return false;
              }
 
              // 2. Name Match (Region/City/Road)
              // Requires Country match to avoid ambiguity (except Countrywide)
-             const countryMatch = (entryCountry === curCountry || entryCountry === curNomCountry);
+             const countryMatch = (entry.country === curCountry || entry.country === curNomCountry);
              if (!countryMatch) return false;
 
              if (scope === 'countrywide') return true;
 
              if (scope === 'region') {
-                 return isFuzzyNameMatch(entryRegion, curRegion);
+                 return !!curRegionKey && entry.regionKey === curRegionKey;
              }
 
              if (scope === 'city') {
-                 if (!isFuzzyNameMatch(entryCity, curCity)) return false;
+                 if (!curCityKey || entry.cityKey !== curCityKey) return false;
                  // Same city name in another region is a different city. The
                  // region is only ignored when either side has no region data.
-                 if (entryRegion && curRegion && !isFuzzyNameMatch(entryRegion, curRegion)) return false;
+                 if (entry.regionKey && curRegionKey && entry.regionKey !== curRegionKey) return false;
                  return true;
              }
 
              if (scope === 'road') {
                  // Check if ANY entry road matches ANY current road
-                 if (!entryRoads || entryRoads.length === 0) return false;
-                 if (curRoads.length === 0) return false;
-
-                 return curRoads.some(cr => entryRoads.some(er => isFuzzyNameMatch(cr, er)));
+                 return curRoadNameKeys.some(key => entry.roadKeys.includes(key));
              }
 
              return false;
@@ -6770,7 +5250,7 @@
                  const meta = getMetaById(id);
                  if (!meta) return;
 
-                 if (checkMatch(meta.scope, entry.lat, entry.lng, entry.country, entry.region, entry.city, entry.roads)) {
+                 if (checkMatch(meta.scope, entry)) {
                      matchedMetaIds.add(id);
                      matches.push(meta);
                  }
@@ -6798,21 +5278,14 @@
     }
 
     function isRoundResult() {
-        const selector = document.querySelectorAll('[alt="Correct location"]');
-        return selector.length > 0;
+        return document.querySelector('[alt="Correct location"]') !== null;
     }
 
     function updateVisibility(resultActive = isRoundResult()) {
-		const hud = document.getElementById('gg-meta-hud');
+        const hud = document.getElementById('gg-meta-hud');
         if (!hud) return;
 
-        if (resultActive) {
-            hud.classList.add('gg-visible');
-            return;
-        }
-		
-		hud.classList.remove('gg-visible');
-        return;
+        hud.classList.toggle('gg-visible', resultActive);
     }
 
     function checkLocation(panoid, options = {}) {
@@ -6834,16 +5307,193 @@
         nextPanoid = null;
         nextPanoidQueuedAt = 0;
 
-        if (changed) {
-            debugLog('[BetterMetas] New Location detected:', panoid);
-            updateStatus(`ID: ${panoid.substring(0,12)}...`);
+        // StreetView reports the same panoid several times per move (delayed
+        // reads, status events): nothing to do unless it really changed. Display
+        // refreshes for new data (DB load, geocoding) are triggered by their owners.
+        if (!changed) return;
 
-            // Trigger Location Data Extraction Immediately
-            extractLocationData();
+        debugLog('[BetterMetas] New Location detected:', panoid);
+        updateStatus(`ID: ${panoid.substring(0,12)}...`);
+
+        // Trigger Location Data Extraction Immediately
+        extractLocationData();
+        refreshDisplay();
+    }
+
+    const GEOCODE_DEDUP_MS = 10000;
+
+    // Geocoding answers arrive late: they only apply if the displayed location is
+    // still the one they were requested for.
+    function isCurrentLocation(latStr, lngStr) {
+        return currentLocationData.lat === latStr && currentLocationData.lng === lngStr;
+    }
+
+    // Rough country guess from a StreetView description ("Street, City, Country").
+    // It can be wrong (a region, a zip code): the geocoders replace it.
+    function guessCountryFromDescription(desc) {
+        if (!desc.includes(',')) return desc;
+
+        const parts = desc.split(',');
+        let country = parts[parts.length - 1].trim();
+        // Skip a trailing zip code.
+        if (/^\d+$/.test(country) && parts.length > 1) {
+            country = parts[parts.length - 2].trim();
+        }
+        return country;
+    }
+
+    function parseGoogleGeocode(results) {
+        let country = null;
+        let region = null;
+        let city = null;
+        let cityFallback = null;
+        const roadSource = { names: [], refs: [] };
+
+        results[0].address_components.forEach(comp => {
+            if (comp.types.includes('country')) country = comp.long_name;
+            if (comp.types.includes('administrative_area_level_1')) region = comp.long_name;
+            if (comp.types.includes('locality') || comp.types.includes('postal_town')) {
+                if (!city) city = comp.long_name; // Prefer locality
+            } else if (comp.types.includes('administrative_area_level_2')) {
+                if (!cityFallback) cityFallback = comp.long_name;
+            }
+            if (comp.types.includes('route')) addGoogleRouteComponent(roadSource, comp);
+        });
+
+        // Other results can expose the same road under another name/ref
+        results.slice(1, 5).forEach(result => {
+            if (!result.types || !result.types.includes('route')) return;
+            (result.address_components || []).forEach(comp => {
+                if (comp.types.includes('route')) addGoogleRouteComponent(roadSource, comp);
+            });
+        });
+
+        return { country, region, city: city || cityFallback, roadSource };
+    }
+
+    function applyGoogleGeocode(parsed, latStr, lngStr, lat, lng) {
+        if (!isCurrentLocation(latStr, lngStr)) return;
+
+        currentLocationData.googleCountry = parsed.country;
+        // Primary country selection (Google preferred)
+        if (parsed.country) {
+            currentLocationData.country = normalizeCountry(parsed.country, lat, lng);
         }
 
-        // Trigger Display Refresh (this handles checking if data is loaded)
+        currentLocationData.placeSources = currentLocationData.placeSources || newPlaceSources();
+        currentLocationData.placeSources.google = { region: parsed.region, city: parsed.city };
+        applyPlaceNames();
+        if (parsed.roadSource.names.length || parsed.roadSource.refs.length) {
+            currentLocationData.roadSources = currentLocationData.roadSources || newRoadSources();
+            currentLocationData.roadSources.google = parsed.roadSource;
+            currentLocationData.road = chooseRoad(currentLocationData.roadSources);
+        }
+
+        updateLocationUI();
         refreshDisplay();
+    }
+
+    // Google Geocoding (dominant for the country).
+    function geocodeWithGoogle(latStr, lngStr, lat, lng) {
+        sharedGeocoder ||= new win.google.maps.Geocoder();
+        sharedGeocoder.geocode({ location: { lat, lng } }, (results, status) => {
+            if (status === 'OK' && results[0]) {
+                applyGoogleGeocode(parseGoogleGeocode(results), latStr, lngStr, lat, lng);
+            } else {
+                console.warn('[BetterMetas] Google geocode failed:', status);
+            }
+            markGeocodeDone('google', latStr, lngStr);
+        });
+    }
+
+    // `fallbackCountry` is the description-based guess, `loc` the StreetView location.
+    function parseNominatimGeocode(data, fallbackCountry, lat, lng, loc) {
+        const a = data.address;
+        const country = normalizeCountry(a.country || fallbackCountry, lat, lng);
+        const region = a.state || a.region || a.province || null;
+        const city = a.city || a.municipality || a.town || a.village || null;
+
+        // Road Logic: names and refs of the road (no suburb/hamlet/village,
+        // which are places, not roads). OSM "ref" tags are real refs.
+        const roadSource = { names: [], refs: [] };
+        const splitTag = v => String(v || '').split(';').map(x => x.trim()).filter(Boolean);
+        [a.road, a.pedestrian, a.highway, a.street].forEach(v => roadSource.names.push(...splitTag(v)));
+        if (data.class === 'highway' || data.category === 'highway') {
+            const nd = data.namedetails || {};
+            const ex = data.extratags || {};
+            [nd.name, nd.official_name, nd.alt_name].forEach(v => roadSource.names.push(...splitTag(v)));
+            [nd.ref, ex.ref, ex.int_ref].forEach(v => roadSource.refs.push(...splitTag(v)));
+        }
+        let road = chooseRoad({ google: { names: [], refs: [] }, nominatim: roadSource });
+
+        // Fallback: If still no road, use shortDescription if it looks like a road
+        const shortDescription = loc.shortDescription;
+        if (!road && shortDescription && shortDescription !== loc.description && shortDescription !== country &&
+            shortDescription !== region && shortDescription !== city) {
+            road = shortDescription;
+        }
+
+        return { address: data.display_name, country, region, city, roadSource, road };
+    }
+
+    function applyNominatimGeocode(parsed, latStr, lngStr) {
+        if (isCurrentLocation(latStr, lngStr)) {
+            currentLocationData.nominatimCountry = parsed.country;
+            currentLocationData.address = parsed.address; // Prefer Nominatim address
+
+            // Fallback for Country if Google gave none. The country seeded from
+            // the description is only a guess (it can be a region: "Napo"),
+            // so Nominatim's replaces it.
+            if (!currentLocationData.googleCountry) {
+                currentLocationData.country = parsed.country;
+            }
+
+            currentLocationData.placeSources = currentLocationData.placeSources || newPlaceSources();
+            currentLocationData.placeSources.nominatim = { region: parsed.region, city: parsed.city };
+            applyPlaceNames();
+            if (parsed.road) {
+                const { roadSource } = parsed;
+                if (!roadSource.names.length && !roadSource.refs.length) roadSource.names.push(parsed.road);
+                currentLocationData.roadSources = currentLocationData.roadSources || newRoadSources();
+                currentLocationData.roadSources.nominatim = roadSource;
+                currentLocationData.road = chooseRoad(currentLocationData.roadSources);
+            }
+        }
+
+        updateLocationUI();
+        refreshDisplay();
+    }
+
+    // Nominatim Geocoding (detail/fallback).
+    function geocodeWithNominatim(latStr, lngStr, lat, lng, fallbackCountry, loc) {
+        const geocodeKey = `${latStr},${lngStr}`;
+        const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&accept-language=en&extratags=1&namedetails=1`;
+        if (activeNominatimController && activeNominatimKey !== geocodeKey) {
+            activeNominatimController.abort();
+        }
+        const controller = new AbortController();
+        activeNominatimController = controller;
+        activeNominatimKey = geocodeKey;
+
+        fetch(url, { signal: controller.signal })
+            .then(response => response.json())
+            .then(data => {
+                if (data && data.address) {
+                    applyNominatimGeocode(parseNominatimGeocode(data, fallbackCountry, lat, lng, loc), latStr, lngStr);
+                }
+            })
+            .catch(error => {
+                if (error?.name !== 'AbortError') {
+                    console.error('[BetterMetas] Nominatim geocode failed:', error);
+                }
+            })
+            .finally(() => {
+                markGeocodeDone('nominatim', latStr, lngStr);
+                if (activeNominatimController === controller) {
+                    activeNominatimController = null;
+                    activeNominatimKey = null;
+                }
+            });
     }
 
     function extractLocationData(attempt = 0, extractionId = null) {
@@ -6867,231 +5517,72 @@
         setTimeout(() => {
             if (extractionId !== locationExtractionSequence) return;
             try {
-                // Check if we can get location data
-                let loc = null;
-                if (typeof svInstance.getLocation === 'function') {
-                    loc = svInstance.getLocation();
-                }
+                const loc = typeof svInstance.getLocation === 'function' ? svInstance.getLocation() : null;
+                const latLng = loc && loc.latLng;
+                const lat = latLng ? (typeof latLng.lat === 'function' ? latLng.lat() : latLng.lat) : NaN;
+                const lng = latLng ? (typeof latLng.lng === 'function' ? latLng.lng() : latLng.lng) : NaN;
 
-                if (loc) {
-                    const desc = loc.description || loc.shortDescription || "Unknown Location";
-                    const latLng = loc.latLng;
-                    const lat = latLng ? (typeof latLng.lat === 'function' ? latLng.lat() : latLng.lat) : 0;
-                    const lng = latLng ? (typeof latLng.lng === 'function' ? latLng.lng() : latLng.lng) : 0;
-
-                    debugLog(`[BetterMetas] Location Found: ${desc} (${lat}, ${lng})`);
-
-                    // Simple heuristic for "Country" from address (last part after comma)
-                    let country = "Unknown";
-                    if (desc && desc.includes(',')) {
-                        const parts = desc.split(',');
-                        country = parts[parts.length - 1].trim();
-                        // Filter out zip codes if mixed in (basic check)
-                        if (/^\d+$/.test(country) && parts.length > 1) {
-                            country = parts[parts.length - 2].trim();
-                        }
-                    } else {
-                        country = desc; // Fallback
-                    }
-
-                    // Check if we already have this location data to prevent overwriting with nulls during race conditions
-                    const newLatStr = lat.toFixed(5);
-                    const newLngStr = lng.toFixed(5);
-
-                    if (currentLocationData &&
-                        currentLocationData.lat === newLatStr &&
-                        currentLocationData.lng === newLngStr) {
-
-                        // Location hasn't changed.
-                        // If we already have a Road, don't wipe it out!
-                        if (currentLocationData.road) {
-                            debugLog('[BetterMetas] Road already exists for this location, skipping reset/re-geocode.');
-                            // Ensure HUD is refreshed just in case
-                            if (currentPanoid) checkLocation(currentPanoid);
-                            return;
-                        }
-
-                        // If we don't have a road, we might want to let it proceed to geocoding...
-                        // But we should carry over existing country/region/address if valid
-                        currentLocationData.address = currentLocationData.address || desc;
-                        currentLocationData.country = currentLocationData.country || country;
-                        // Region and Road are null, so let them be re-fetched below
-
-                    } else {
-                        // New location, reset
-                        currentLocationData = {
-                            address: desc,
-                            country: country,
-                            region: null,
-                            city: null,
-                            road: null,
-                            roadSources: newRoadSources(),
-                            placeSources: newPlaceSources(),
-                            geocodeDone: { google: false, nominatim: false },
-                            lat: newLatStr,
-                            lng: newLngStr
-                        };
-                    }
-
-                    updateLocationUI();
-
-                    // Immediate trigger with basic info (Lat/Lng is enough for radius checks)
-                    if (currentPanoid) checkLocation(currentPanoid);
-
-                    // Dual Geocoding Strategy
-                    const latVal = parseFloat(lat);
-                    const lngVal = parseFloat(lng);
-                    const geocodeKey = `${newLatStr},${newLngStr}`;
-                    if (recentlyGeocodedLocations.has(geocodeKey)) {
-                        debugLog('[BetterMetas] Geocoding already running for this location.');
-                        return;
-                    }
-                    recentlyGeocodedLocations.add(geocodeKey);
-                    setTimeout(() => recentlyGeocodedLocations.delete(geocodeKey), 10000);
-                    currentLocationData.geocodeDone = { google: false, nominatim: false };
-
-                    // 1. Google Geocoding (Dominant for country)
-                    sharedGeocoder ||= new win.google.maps.Geocoder();
-                    sharedGeocoder.geocode({ location: { lat: latVal, lng: lngVal } }, (results, status) => {
-                        if (status === "OK" && results[0]) {
-                            const res = results[0];
-                            const addrComp = res.address_components;
-
-                            let gCountry = null;
-                            let gRegion = null;
-                            let gCity = null;
-                            const gRoadSource = { names: [], refs: [] };
-
-                            let gCityFallback = null;
-                            addrComp.forEach(comp => {
-                                if (comp.types.includes("country")) gCountry = comp.long_name;
-                                if (comp.types.includes("administrative_area_level_1")) gRegion = comp.long_name;
-                                if (comp.types.includes("locality") || comp.types.includes("postal_town")) {
-                                    if (!gCity) gCity = comp.long_name; // Prefer locality
-                                } else if (comp.types.includes("administrative_area_level_2")) {
-                                    if (!gCityFallback) gCityFallback = comp.long_name;
-                                }
-                                if (comp.types.includes("route")) addGoogleRouteComponent(gRoadSource, comp);
-                            });
-                            if (!gCity) gCity = gCityFallback;
-                            // Other results can expose the same road under another name/ref
-                            results.slice(1, 5).forEach(r => {
-                                if (!r.types || !r.types.includes('route')) return;
-                                (r.address_components || []).forEach(comp => {
-                                    if (comp.types.includes('route')) addGoogleRouteComponent(gRoadSource, comp);
-                                });
-                            });
-
-                            if (currentLocationData.lat === newLatStr && currentLocationData.lng === newLngStr) {
-                                currentLocationData.googleCountry = gCountry;
-                                // Primary country selection (Google preferred)
-                                if (gCountry) {
-                                    currentLocationData.country = normalizeCountry(gCountry, lat, lng);
-                                }
-
-                                currentLocationData.placeSources = currentLocationData.placeSources || newPlaceSources();
-                                currentLocationData.placeSources.google = { region: gRegion, city: gCity };
-                                applyPlaceNames();
-                                if (gRoadSource.names.length || gRoadSource.refs.length) {
-                                    currentLocationData.roadSources = currentLocationData.roadSources || newRoadSources();
-                                    currentLocationData.roadSources.google = gRoadSource;
-                                    currentLocationData.road = chooseRoad(currentLocationData.roadSources);
-                                }
-
-                                updateLocationUI();
-                                if (currentPanoid) checkLocation(currentPanoid);
-                            }
-                        } else {
-                            console.warn('[BetterMetas] Google geocode failed:', status);
-                        }
-                        markGeocodeDone('google', newLatStr, newLngStr);
-                    });
-
-                    // 2. Nominatim Geocoding (Detail/Fallback)
-                    const nominatimUrl = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latVal}&lon=${lngVal}&accept-language=en&extratags=1&namedetails=1`;
-                    if (activeNominatimController && activeNominatimKey !== geocodeKey) {
-                        activeNominatimController.abort();
-                    }
-                    const nominatimController = typeof AbortController === 'function' ? new AbortController() : null;
-                    activeNominatimController = nominatimController;
-                    activeNominatimKey = geocodeKey;
-                    fetch(nominatimUrl, {
-                        headers: { 'User-Agent': 'GeoguessrBetterMetas/1.0' },
-                        signal: nominatimController?.signal
-                    })
-                    .then(response => response.json())
-                    .then(data => {
-                        if (data && data.address) {
-                            const a = data.address;
-                            const address = data.display_name;
-                            let nCountry = a.country || country;
-                            let realNomCountry = normalizeCountry(nCountry, lat, lng);
-                            let region = a.state || a.region || a.province || null;
-                            let city = a.city || a.municipality || a.town || a.village || null;
-
-                            // Road Logic: names and refs of the road (no suburb/hamlet/village,
-                            // which are places, not roads). OSM "ref" tags are real refs.
-                            const nRoadSource = { names: [], refs: [] };
-                            const splitTag = v => String(v || '').split(';').map(x => x.trim()).filter(Boolean);
-                            [a.road, a.pedestrian, a.highway, a.street].forEach(v => nRoadSource.names.push(...splitTag(v)));
-                            if (data.class === 'highway' || data.category === 'highway') {
-                                const nd = data.namedetails || {};
-                                const ex = data.extratags || {};
-                                [nd.name, nd.official_name, nd.alt_name].forEach(v => nRoadSource.names.push(...splitTag(v)));
-                                [nd.ref, ex.ref, ex.int_ref].forEach(v => nRoadSource.refs.push(...splitTag(v)));
-                            }
-                            let road = chooseRoad({ google: { names: [], refs: [] }, nominatim: nRoadSource });
-
-                            // Fallback: If still no road, use shortDescription if it looks like a road
-                            if (!road && loc.shortDescription && loc.shortDescription !== loc.description && loc.shortDescription !== realNomCountry) {
-                                if (loc.shortDescription !== region && loc.shortDescription !== city) {
-                                    road = loc.shortDescription;
-                                }
-                            }
-
-                            // Update Location Data (if still relevant)
-                            if (currentLocationData.lat === newLatStr && currentLocationData.lng === newLngStr) {
-                                currentLocationData.nominatimCountry = realNomCountry;
-                                currentLocationData.address = address; // Prefer Nominatim address
-
-                                // Fallback for Country if Google failed
-                                if (!currentLocationData.country) {
-                                    currentLocationData.country = realNomCountry;
-                                }
-
-                                currentLocationData.placeSources = currentLocationData.placeSources || newPlaceSources();
-                                currentLocationData.placeSources.nominatim = { region, city };
-                                applyPlaceNames();
-                                if (road) {
-                                    if (!nRoadSource.names.length && !nRoadSource.refs.length) nRoadSource.names.push(road);
-                                    currentLocationData.roadSources = currentLocationData.roadSources || newRoadSources();
-                                    currentLocationData.roadSources.nominatim = nRoadSource;
-                                    currentLocationData.road = chooseRoad(currentLocationData.roadSources);
-                                }
-                            }
-
-                            updateLocationUI();
-                            if (currentPanoid) checkLocation(currentPanoid);
-                        }
-                    })
-                    .catch(error => {
-                        if (error?.name !== 'AbortError') {
-                            console.error('[BetterMetas] Nominatim geocode failed:', error);
-                        }
-                    })
-                    .finally(() => {
-                        markGeocodeDone('nominatim', newLatStr, newLngStr);
-                        if (activeNominatimController === nominatimController) {
-                            activeNominatimController = null;
-                            activeNominatimKey = null;
-                        }
-                    });
-                } else {
-                    debugLog(`[BetterMetas] svInstance.getLocation() returned null/empty (Attempt ${attempt+1}/${maxAttempts}).`);
+                // No coordinates yet: never fall back to (0, 0), try again shortly.
+                if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+                    debugLog(`[BetterMetas] svInstance.getLocation() returned no coordinates (Attempt ${attempt+1}/${maxAttempts}).`);
                     if (attempt < maxAttempts) {
                         extractLocationData(attempt + 1, extractionId);
                     }
+                    return;
                 }
+
+                const desc = loc.description || loc.shortDescription || 'Unknown Location';
+                debugLog(`[BetterMetas] Location Found: ${desc} (${lat}, ${lng})`);
+
+                const country = guessCountryFromDescription(desc);
+                const latStr = lat.toFixed(5);
+                const lngStr = lng.toFixed(5);
+
+                // Check if we already have this location data to prevent overwriting with nulls during race conditions
+                if (currentLocationData && isCurrentLocation(latStr, lngStr)) {
+                    // Location hasn't changed. If we already have a Road, don't wipe it out!
+                    if (currentLocationData.road) {
+                        debugLog('[BetterMetas] Road already exists for this location, skipping reset/re-geocode.');
+                        refreshDisplay();
+                        return;
+                    }
+
+                    // No road yet: carry over the existing country/address and let the
+                    // geocoders below fetch region and road again.
+                    currentLocationData.address = currentLocationData.address || desc;
+                    currentLocationData.country = currentLocationData.country || country;
+                } else {
+                    // New location, reset
+                    currentLocationData = {
+                        address: desc,
+                        country: country,
+                        region: null,
+                        city: null,
+                        road: null,
+                        roadSources: newRoadSources(),
+                        placeSources: newPlaceSources(),
+                        geocodeDone: { google: false, nominatim: false },
+                        lat: latStr,
+                        lng: lngStr
+                    };
+                }
+
+                updateLocationUI();
+
+                // Immediate refresh with basic info (Lat/Lng is enough for radius checks)
+                refreshDisplay();
+
+                const geocodeKey = `${latStr},${lngStr}`;
+                if (recentlyGeocodedLocations.has(geocodeKey)) {
+                    debugLog('[BetterMetas] Geocoding already running for this location.');
+                    return;
+                }
+                recentlyGeocodedLocations.add(geocodeKey);
+                setTimeout(() => recentlyGeocodedLocations.delete(geocodeKey), GEOCODE_DEDUP_MS);
+                currentLocationData.geocodeDone = { google: false, nominatim: false };
+
+                geocodeWithGoogle(latStr, lngStr, lat, lng);
+                geocodeWithNominatim(latStr, lngStr, lat, lng, country, loc);
             } catch (e) {
                 console.warn('[BetterMetas] Error accessing location data:', e);
             }
@@ -7151,7 +5642,7 @@
 
     // --- Local dev-server writes ---
     // All saves are written straight to the local dev server (see
-    // local-server.js): no GitHub, no token, no network commit involved.
+    // local-server.js): no token, no network commit involved.
     // The server exposes a PUT route per data file that overwrites it on disk.
     function requestLocalWrite(method, file, rawBody) {
         return new Promise((resolve, reject) => {
@@ -7189,6 +5680,12 @@
         return withLocalWriteQueue(async () => {
             const raw = await fetchRawJsonWithRetry(() => getRawFileUrl(file), file, value => value, null, { allowMissing: true });
             const content = normalizeContent(raw);
+            // Normalizing silently drops anything that does not have the expected
+            // shape (e.g. an object where a list is expected, after a hand edit):
+            // refuse to write that back over the file.
+            if (raw !== null && Array.isArray(raw) !== Array.isArray(content)) {
+                throw new Error(`${file} does not have the expected format; fix the file before saving from BetterMetas.`);
+            }
             const before = skipUnchanged ? stringifyJsonContent(content) : null;
             const updatedContent = updateContent(content) || content;
 
@@ -7260,11 +5757,10 @@
             }
         }
 
-        if (options.allowMissing) {
-            console.warn(`[BetterMetas] ${label} unavailable after retries, continuing with empty data:`, lastError);
-            return defaultValue;
-        }
-
+        // Only a real "file does not exist" (404/204, handled above) may fall back to
+        // the default. Any other failure (server down, timeout, invalid JSON) must
+        // throw: callers write the result back to disk, and an empty fallback would
+        // overwrite the whole data file with just the new entry.
         throw lastError || new Error(`${label} load failed`);
     }
 
@@ -7276,7 +5772,7 @@
             options.defaultValue,
             { allowMissing: options.allowMissing }
         );
-        console.log(`[BetterMetas] Loaded ${options.count(data)} ${options.description}.`);
+        debugLog(`[BetterMetas] Loaded ${options.count(data)} ${options.description}.`);
         return data;
     }
 
@@ -7289,7 +5785,7 @@
 
     // --- Data Fetching ---
     async function fetchLocationData() {
-        console.log('[BetterMetas] Fetching data...');
+        debugLog('[BetterMetas] Fetching data...');
         updateStatus(metasData.length > 0 ? 'Refreshing DB...' : 'Loading DB...');
         const loadId = ++dataLoadSequence;
 
@@ -7300,7 +5796,7 @@
             ]);
 
             if (loadId !== dataLoadSequence) {
-                console.log('[BetterMetas] Ignoring stale DB load result.');
+                debugLog('[BetterMetas] Ignoring stale DB load result.');
                 return;
             }
 
@@ -7311,10 +5807,8 @@
             const applied = applyDataSnapshot(snapshot, { prunePending: true, alreadyNormalized: true });
             saveDataSnapshotCache(snapshot);
 
-            const locCount = getCombinedLocationCount();
-            const userLocCount = Object.keys(userLocationMap).length;
             const pendingLocCount = Object.keys(applied.pending.locations).length;
-            console.log(`[BetterMetas] DB Ready: ${locCount} locs (${userLocCount} user), ${metasData.length} metas (${userMetaIds.size} user). Pending local merge: ${applied.pending.metas.length} metas, ${pendingLocCount} locs.`);
+            debugLog(`[BetterMetas] DB Ready: ${Object.keys(userLocationMap).length} locs, ${metasData.length} metas. Pending local merge: ${applied.pending.metas.length} metas, ${pendingLocCount} locs.`);
 
             syncPanoidForUserAction('DB ready');
 
@@ -7422,7 +5916,7 @@
             return false;
         }
 
-        console.log('[BetterMetas] Google Maps API found. Installing hooks...');
+        debugLog('[BetterMetas] Google Maps API found. Installing hooks...');
 
         // 1. Hook StreetViewPanorama Constructor
         const OriginalStreetViewPanorama = win.google.maps.StreetViewPanorama;
@@ -7477,7 +5971,7 @@
         }
 
         hooksInstalled = true;
-        console.log('[BetterMetas] Hooks installed successfully.');
+        debugLog('[BetterMetas] Hooks installed successfully.');
         return true;
     }
 
@@ -7500,21 +5994,29 @@
              const queueExpired = nextPanoidQueuedAt > 0
                  && Date.now() - nextPanoidQueuedAt >= QUEUED_PANO_FORCE_MS;
              if (nextPanoid && (!resultActive || userDismissed || (queuedPanoidConfirmed && queueExpired))) {
-                 console.log('[BetterMetas] Applying queued panoid:', nextPanoid);
+                 debugLog('[BetterMetas] Applying queued panoid:', nextPanoid);
                  checkLocation(nextPanoid, { bypassResultLock: true });
              }
+
+             // The result screen is gone: re-arm the lock for the next result screen
+             // (otherwise it would only ever work for the first round).
+             if (!resultActive) userDismissed = false;
          };
          setInterval(runVisibilityPoll, VISIBILITY_POLL_INTERVAL_MS);
          document.addEventListener('visibilitychange', () => {
              if (!document.hidden) runVisibilityPoll();
          });
 
-         // Hook Poller - wait for Google Maps
-         const timer = setInterval(() => {
-            if (installHooks()) {
-                clearInterval(timer);
-            }
-         }, 25);
+         // Fallback for the property watchers above (installGoogleHookWatcher), which
+         // normally catch google.maps the moment it appears: a slow poll with backoff,
+         // instead of a 25 ms loop that never ends on pages without Google Maps.
+         let hookPollDelay = HOOK_POLL_MIN_DELAY_MS;
+         const pollForHooks = () => {
+            if (installHooks()) return;
+            hookPollDelay = Math.min(hookPollDelay * 2, HOOK_POLL_MAX_DELAY_MS);
+            setTimeout(pollForHooks, hookPollDelay);
+         };
+         setTimeout(pollForHooks, hookPollDelay);
 
          // Input Capture for Instant Hide
          document.addEventListener('keydown', (e) => {
@@ -7566,7 +6068,7 @@
              }
          }, true); // Capture phase to catch it early
 
-         console.log('[BetterMetas] Observer started.');
+         debugLog('[BetterMetas] Observer started.');
     }
 
     // --- Initialization ---
@@ -7575,7 +6077,7 @@
         if (!document.body) return false;
 
         uiInitialized = true;
-        console.log('[Geoguessr Meta] Initializing UI...');
+        debugLog('[BetterMetas] Initializing UI...');
         addStyles();
         createHUD();
         applyCachedDataSnapshot();
@@ -7586,20 +6088,12 @@
     function scheduleUIInit() {
         if (initUI()) return;
 
-        const tryInit = () => {
-            if (initUI()) {
-                document.removeEventListener('DOMContentLoaded', tryInit);
-            }
-        };
-
-        document.addEventListener('DOMContentLoaded', tryInit, { once: true });
-        const timer = setInterval(() => {
-            if (initUI()) clearInterval(timer);
-        }, 25);
+        // The script runs at document-start: wait for the DOM, once.
+        document.addEventListener('DOMContentLoaded', initUI, { once: true });
     }
 
     function init() {
-        console.log('[Geoguessr Meta] Initializing...');
+        debugLog('[BetterMetas] Initializing...');
         startObserver();
         scheduleUIInit();
     }
