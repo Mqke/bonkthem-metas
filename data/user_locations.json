@@ -41771,17 +41771,5 @@
     "segment": true,
     "latB": -0.53932,
     "lngB": -78.55348
-  },
-  "oEbSa9FQ1c4_aKrOP1XE6g": {
-    "metas": [
-      "ecuador_1791460157659_qkefu"
-    ],
-    "lat": -3.32274,
-    "lng": -79.1644,
-    "country": "Ecuador",
-    "nominatimCountry": "Ecuador",
-    "region": null,
-    "city": null,
-    "road": "E35"
   }
 }
