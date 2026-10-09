@@ -173,7 +173,7 @@
     //   region -> region
     //   city -> region + city (region needed to disambiguate same-named cities)
     //   road -> road
-    // Other scopes (countrywide, 100km, 10km, 1km, unique) get only mandatory fields.
+    // Other scopes (countrywide, zone, unique) get only mandatory fields.
     // The scope-relevant keys are always present (null if unavailable).
     function getLocationSnapshotForScope(scope) {
         const normalizedScope = normalizeScope(scope);
@@ -306,9 +306,11 @@
     function applyPlaceNames() {
         const src = currentLocationData.placeSources || newPlaceSources();
         currentLocationData.region = src.nominatim.region || src.google.region || null;
-        // City: Google's "locality" is the real city (Quito); Nominatim's town/village is often
-        // just a neighbourhood (Carapungo), so it is only the fallback.
-        currentLocationData.city = src.google.city || src.nominatim.city || null;
+        // City: Nominatim's "city" key is a real city (Esmeraldas) whereas Google's "locality"
+        // can be a neighbourhood (El Faro), so it wins. Without it, Google's locality is the
+        // city (Quito); Nominatim's town/village is often just a neighbourhood (Carapungo),
+        // so it is only the last fallback.
+        currentLocationData.city = src.nominatim.strictCity || src.google.city || src.nominatim.city || null;
     }
 
     // Google route component: short_name differing from long_name is the road code (E20).
@@ -430,7 +432,7 @@
 
     // Does this location entry have EXACTLY the shape required by `scope` for the
     // current location? The shape is:
-    //   countrywide / 100km / 10km / 1km / unique -> region, city, road all empty
+    //   countrywide / zone / unique -> region, city, road all empty
     //   region -> same region, no city, no road
     //   city   -> same region + same city, no road
     //   road   -> a shared road name, no region, no city
@@ -464,7 +466,7 @@
             return !entry.region && !entry.city && hasRoad && curRoads.length > 0 &&
                 curRoads.some(cr => entryRoads.some(er => isSameName(cr, er)));
         }
-        // countrywide, 100km, 10km, 1km, unique
+        // countrywide, zone, unique
         return !entry.region && !entry.city && !hasRoad;
     }
 
@@ -494,7 +496,7 @@
 
     // Keys of a location map are either "<panoid>" or "<panoid>__<scope>" (a second,
     // third... entry created for the same panoid because it needs a different shape).
-    const SCOPED_KEY_SUFFIX_RE = /^(countrywide|region|city|road|segment|100km|10km|1km|unique)(_\d+)?$/;
+    const SCOPED_KEY_SUFFIX_RE = /^(countrywide|region|city|road|segment|zone|unique)(_\d+)?$/;
 
     function isOwnLocationKey(key, panoid) {
         if (key === panoid) return true;
@@ -503,7 +505,7 @@
 
     // panoid -> its location keys ("<panoid>" and "<panoid>__<scope>[_n]"), same rule
     // as isOwnLocationKey.
-    const SCOPED_KEY_RE = /^(.+)__(?:countrywide|region|city|road|segment|100km|10km|1km|unique)(?:_\d+)?$/;
+    const SCOPED_KEY_RE = /^(.+)__(?:countrywide|region|city|road|segment|zone|unique)(?:_\d+)?$/;
     let panoidKeyIndex = new Map();
 
     function buildPanoidKeyIndex(locations) {
@@ -549,12 +551,15 @@
     // Picks the key where a meta of `scope` must be stored when no matching entry
     // exists elsewhere: reuse an entry of this panoid that has the right shape,
     // otherwise create a NEW entry ("<panoid>" if free, else "<panoid>__<scope>").
-    function resolveKeyForNewLink(locations, panoid, scope) {
+    // `zoneRadiusKm` (zone scope only): an existing entry is reused only if it already has
+    // exactly that radius, so no other meta's entry is modified.
+    function resolveKeyForNewLink(locations, panoid, scope, zoneRadiusKm = null) {
         const normalizedScope = normalizeScope(scope);
         // A segment entry belongs to ONE meta (its rectangle is part of the entry), so an
         // existing entry is never reused for a new segment link.
         const ownKey = normalizedScope === 'segment' ? null : getOwnLocationKeys(locations, panoid)
-            .find(key => entryFitsScope(locations[key], normalizedScope));
+            .find(key => entryFitsScope(locations[key], normalizedScope) &&
+                (normalizedScope !== 'zone' || Number(locations[key].radiusKm) === zoneRadiusKm));
         if (ownKey) return ownKey;
 
         if (!locations[panoid]) return panoid;
@@ -566,6 +571,15 @@
             candidate = `${baseKey}_${counter++}`;
         }
         return candidate;
+    }
+
+    // Radius of a zone link made by hand (the zone shape is not known then): the radius the
+    // meta already has on one of its zone entries, otherwise a default.
+    const ZONE_DEFAULT_LINK_RADIUS_KM = 10;
+    function getZoneLinkRadius(locations, metaId) {
+        const existing = Object.values(locations).find(entry =>
+            entry && entry.radiusKm > 0 && getLocationMetaIds(entry).includes(metaId));
+        return existing ? Number(existing.radiusKm) : ZONE_DEFAULT_LINK_RADIUS_KM;
     }
 
     // Adds the meta ids to the location map and returns a Map(metaId -> key used).
@@ -588,13 +602,14 @@
             // 2. otherwise an entry of this panoid with the exact shape is reused;
             // 3. otherwise a new entry is created. An existing entry with another
             //    shape is NEVER reused, or it would be modified for its other metas.
+            const zoneRadiusKm = scope && normalizeScope(scope) === 'zone' ? getZoneLinkRadius(locations, id) : null;
             let targetKey = forcedKeys && forcedKeys.get(id);
             if (!targetKey) {
                 if (scope) {
                     targetKey = (normalizeScope(scope) === 'segment'
                         ? findSegmentLinkKey(locations, id)
                         : findMatchingLocationKey(locations, scope)) ||
-                        resolveKeyForNewLink(locations, panoid, scope);
+                        resolveKeyForNewLink(locations, panoid, scope, zoneRadiusKm);
                 } else {
                     targetKey = panoid;
                 }
@@ -603,6 +618,10 @@
             const entry = ensureLocationEntry(locations, targetKey);
             if (!entry.metas.includes(id)) {
                 entry.metas.push(id);
+            }
+            if (zoneRadiusKm && !(entry.radiusKm > 0)) {
+                entry.zone = 'z1';
+                entry.radiusKm = zoneRadiusKm;
             }
 
             // Fill scope-relevant location fields (only ever happens on a new entry,
@@ -689,11 +708,11 @@
         return addMetaIdsToLocationMap(locations, panoid, [metaId], newScope);
     }
 
-    // ---- Landscape import (scopes 100km / 10km / 1km) -------------------------------
+    // ---- Landscape import (scope zone) -------------------------------
     // A landscape file (Map-Making-App style: { customCoordinates: [{ lat, lng, ... }] })
     // describes a zone. Its central location is stored as an extra location entry linked
     // to the meta, under a dedicated key so it never collides with a panoid entry.
-    const LANDSCAPE_SCOPES = ['100km', '10km', '1km'];
+    const LANDSCAPE_SCOPES = ['zone'];
     const LANDSCAPE_CENTER_KEY_PREFIX = 'center_';
 
     function isLandscapeScope(scope) {
@@ -762,8 +781,8 @@
     }
 
     // ---- Covering a landscape with several centers -----------------------------------
-    // A distance scope matches every location within `radius` km of an entry (see
-    // getDistanceForScope), so a zone wider than the radius needs several entries.
+    // A zone entry matches every location within its `radiusKm`, so a zone wider than
+    // the radius needs several entries.
     // Greedy maximum coverage: repeatedly pick the center that covers the most
     // still-uncovered locations, until none is worth adding.
     const LANDSCAPE_EARTH_RADIUS_KM = 6371;
@@ -799,8 +818,10 @@
     // Returns the centers ({ lat, lng }) needed to cover the landscape with discs of
     // `radiusKm`, most useful first. A single center (the geometric median) is returned
     // when it already covers the zone.
-    function computeLandscapeCenters(points, radiusKm) {
+    function computeLandscapeCenters(points, radiusKm, options = {}) {
         if (!points.length) return [];
+        const maxCenters = options.maxCenters || LANDSCAPE_MAX_CENTERS;
+        const minGainRatio = options.minGainRatio ?? LANDSCAPE_MIN_GAIN_RATIO;
         const chord2 = Math.pow(2 * Math.sin(radiusKm / (2 * LANDSCAPE_EARTH_RADIUS_KM)), 2);
         const roundCenter = (lat, lng) => ({ lat: Number(lat.toFixed(6)), lng: Number(lng.toFixed(6)) });
 
@@ -813,7 +834,7 @@
             const d2 = (v[0] - medianVec[0]) ** 2 + (v[1] - medianVec[1]) ** 2 + (v[2] - medianVec[2]) ** 2;
             if (d2 <= chord2) insideMedian++;
         });
-        if (insideMedian >= points.length * (1 - LANDSCAPE_MIN_GAIN_RATIO)) return [median];
+        if (insideMedian >= points.length * (1 - minGainRatio)) return [median];
 
         // 2. Greedy maximum coverage on unit vectors (exact distances, no projection).
         const sample = sampleLandscapePoints(points, LANDSCAPE_MAX_SAMPLE_POINTS);
@@ -866,9 +887,9 @@
         // Lazy greedy: gains only decrease, so a stale gain is an upper bound.
         const upper = candidates.map(countUncovered);
         const freshRound = new Int32Array(candidates.length).fill(-1);
-        const minGain = Math.max(1, Math.ceil(LANDSCAPE_MIN_GAIN_RATIO * n));
+        const minGain = Math.max(1, Math.ceil(minGainRatio * n));
         const centers = [];
-        for (let round = 0; round < LANDSCAPE_MAX_CENTERS; round++) {
+        for (let round = 0; round < maxCenters; round++) {
             let best = -1;
             for (;;) {
                 let bi = -1, bv = 0;
@@ -899,17 +920,55 @@
         return centers;
     }
 
+    // "zone" scope: the radius is not fixed, it is computed for the imported zone. It is the
+    // smallest candidate radius whose discs (at most ZONE_MAX_CENTERS) cover the zone, so the
+    // discs overflow as little as possible. Every center of the zone stores that same radius.
+    const ZONE_RADIUS_CANDIDATES_KM = [1, 2, 3, 5, 7, 10, 15, 20, 30, 40, 50, 70, 100];
+    const ZONE_MAX_CENTERS = 100;
+    const ZONE_MIN_COVERAGE = 0.98;
+    const ZONE_MIN_GAIN_RATIO = 0.002;
+
+    // Share of the points lying within radiusKm of at least one center.
+    function computeLandscapeCoverage(points, centers, radiusKm) {
+        if (!points.length || !centers.length) return 0;
+        const chord2 = Math.pow(2 * Math.sin(radiusKm / (2 * LANDSCAPE_EARTH_RADIUS_KM)), 2);
+        const centerVecs = centers.map(c => latLngToUnitVector(c.lat, c.lng));
+        let covered = 0;
+        points.forEach(pt => {
+            const v = latLngToUnitVector(pt.lat, pt.lng);
+            const inside = centerVecs.some(c =>
+                (v[0] - c[0]) ** 2 + (v[1] - c[1]) ** 2 + (v[2] - c[2]) ** 2 <= chord2);
+            if (inside) covered++;
+        });
+        return covered / points.length;
+    }
+
+    function computeZoneCenters(points) {
+        let fallback = null;
+        for (const radiusKm of ZONE_RADIUS_CANDIDATES_KM) {
+            const centers = computeLandscapeCenters(points, radiusKm,
+                { maxCenters: ZONE_MAX_CENTERS, minGainRatio: ZONE_MIN_GAIN_RATIO });
+            fallback = { radiusKm, centers };
+            if (computeLandscapeCoverage(points, centers, radiusKm) >= ZONE_MIN_COVERAGE) break;
+        }
+        return fallback;
+    }
+
     // Centers of an imported landscape for the scope the meta is saved with, each
     // carrying the country found at import time.
-    function buildLandscapeCenters(landscapeImport, scope) {
+    function buildLandscapeCenters(landscapeImport, scope, zoneId = 'z1') {
         if (!landscapeImport || !landscapeImport.points?.length) return null;
-        const radiusKm = getDistanceForScope(scope);
-        if (!(radiusKm > 0)) return null;
-        return computeLandscapeCenters(landscapeImport.points, radiusKm).map(center => ({
-            ...center,
-            country: landscapeImport.country || null,
-            nominatimCountry: landscapeImport.nominatimCountry || null
-        }));
+        if (normalizeScope(scope) === 'zone') {
+            const { radiusKm, centers } = computeZoneCenters(landscapeImport.points);
+            return centers.map(center => ({
+                ...center,
+                zone: zoneId,
+                radiusKm,
+                country: landscapeImport.country || null,
+                nominatimCountry: landscapeImport.nominatimCountry || null
+            }));
+        }
+        return null;
     }
 
     // Country of a coordinate (English names, same source as the rest of the script).
@@ -966,21 +1025,9 @@
         });
     }
 
-    // Links the meta to ONE centre location. If a centre entry already exists at the same
-    // coordinates (e.g. created for another meta of the same landscape), the meta is
-    // added to its list of metas instead of creating a duplicate location.
-    // Returns the key of the entry holding the meta.
+    // Links the meta to ONE zone center. A zone center carries its own radius, so it is
+    // never shared with another meta. Returns the key of the entry holding the meta.
     function addLandscapeCenterEntry(locations, metaId, center) {
-        const sharedKey = Object.keys(locations).find(key =>
-            isLandscapeCenterKey(key) &&
-            isSameCoordinate(locations[key]?.lat, center.lat) &&
-            isSameCoordinate(locations[key]?.lng, center.lng));
-        if (sharedKey) {
-            const entry = normalizeLocationEntry(locations[sharedKey]);
-            locations[sharedKey] = { ...entry, metas: Array.from(new Set([...entry.metas, metaId])) };
-            return sharedKey;
-        }
-
         const baseKey = getLandscapeCenterKey(metaId);
         let key = baseKey;
         let counter = 2;
@@ -993,15 +1040,27 @@
             nominatimCountry: center.nominatimCountry || null,
             region: null,
             city: null,
-            road: null
+            road: null,
+            zone: center.zone || 'z1',
+            radiusKm: center.radiusKm
         };
         return key;
     }
 
-    // Replaces ALL the centres of the meta (previous ones are dropped first, so
-    // re-importing moves them). Returns the keys of the entries holding the meta.
-    function setLandscapeCenterEntries(locations, metaId, centers) {
-        removeLandscapeCenterEntry(locations, metaId);
+    // Next free zone id ("z1", "z2"...) of the meta: an import ADDS a zone, it never
+    // replaces the zones the meta already has.
+    function getNextZoneId(locations, metaId) {
+        let max = 0;
+        Object.values(locations || {}).forEach(entry => {
+            if (!entry || !(entry.radiusKm > 0) || !getLocationMetaIds(entry).includes(metaId)) return;
+            const match = /^z(\d+)$/.exec(entry.zone || 'z1');
+            if (match) max = Math.max(max, Number(match[1]));
+        });
+        return `z${max + 1}`;
+    }
+
+    // Adds the centres of a new zone to the meta. Returns the keys of the entries holding the meta.
+    function addLandscapeCenterEntries(locations, metaId, centers) {
         return centers.map(center => addLandscapeCenterEntry(locations, metaId, center));
     }
 
@@ -1273,6 +1332,7 @@
                 latB: normalizeCoordinate(entry.latB),
                 lngB: normalizeCoordinate(entry.lngB),
                 country,
+                radiusKm: entry.radiusKm > 0 ? Number(entry.radiusKm) : null,
                 regionKey: normalizeNameForMatch(entry.region),
                 cityKey: normalizeNameForMatch(entry.city),
                 roads: getNormalizedRoadNames(entry.road),
@@ -1399,8 +1459,8 @@
     let activeMutationCount = 0;
     let backgroundRefreshTimer = null;
 
-    const ALL_SCOPES = ['countrywide', 'region', 'city', 'road', 'segment', '100km', '10km', '1km', 'unique'];
-    const LINKED_META_SCOPE_ORDER = ['unique', '1km', '10km', 'segment', 'road', 'city', '100km', 'region', 'countrywide'];
+    const ALL_SCOPES = ['countrywide', 'region', 'city', 'road', 'segment', 'zone', 'unique'];
+    const LINKED_META_SCOPE_ORDER = ['unique', 'zone', 'segment', 'road', 'city', 'region', 'countrywide'];
     // "segment" scope: two bounds A and B are the opposite corners of a rectangle, grown by
     // SEGMENT_BOX_MARGIN_KM on every side; a single bound matches within SEGMENT_CORRIDOR_KM.
     const SEGMENT_CORRIDOR_KM = 5;
@@ -1447,7 +1507,6 @@
 
     function getScopeLabel(scope) {
         if (!scope) return '';
-        if (/^\d+km$/i.test(scope)) return scope;
         return scope.charAt(0).toUpperCase() + scope.slice(1);
     }
 
@@ -2120,6 +2179,8 @@
                     .filter(Boolean);
                 // "segment" is newer than the stored list: follow "road" when unknown.
                 if (!storedScopes.includes('segment') && knownScopes.includes('road')) knownScopes.push('segment');
+                // "zone" is newer than the stored list: follow "segment" when unknown.
+                if (!storedScopes.includes('zone') && knownScopes.includes('segment')) knownScopes.push('zone');
                 if (knownScopes.length > 0) return new Set(knownScopes);
             }
         } catch (err) {
@@ -2325,7 +2386,7 @@
     // Centre computed from an imported file, waiting for the form to be saved.
     const landscapeCenterState = { create: null, admin: null };
 
-    // The import button is only shown for 100km / 10km / 1km.
+    // The import button is only shown for the zone scope.
     function refreshLandscapeImportUi(formKey) {
         const cfg = LANDSCAPE_FORMS[formKey];
         const box = document.getElementById(cfg.box);
@@ -2496,7 +2557,7 @@
     }
 
     function formatAdminLocationLabel(location) {
-        // Distance scopes (100km / 10km / 1km) are located by coordinates, not by name:
+        // The zone scope is located by coordinates, not by name:
         // "<lat> <lng> (<scope>)", so they are told apart from countrywide / region / city / road.
         if (isLandscapeScope(location.scope)) {
             const lat = normalizeCoordinate(location.lat);
@@ -2540,6 +2601,17 @@
         return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
     }
 
+    // Identifies the zone an entry belongs to ("<zone id>|<radius>"), or null when the entry
+    // is not a zone center of a meta of the zone scope.
+    function getAdminZoneKey(entry, scope) {
+        if (normalizeScope(scope) !== 'zone' || !(Number(entry?.radiusKm) > 0)) return null;
+        return `${entry.zone || 'z1'}|${Number(entry.radiusKm)}`;
+    }
+
+    function formatZoneRadius(radiusKm) {
+        return `${Number(radiusKm.toFixed(1))} km`;
+    }
+
     function renderAdminLinkedLocations(metaId) {
         const container = document.getElementById('gg-admin-linked-locations');
         if (!container) return;
@@ -2571,16 +2643,54 @@
         // Re-rendering (after a road removal, a sync...) must not collapse the dropdowns
         // the user opened: remember them, for the same meta only.
         const openRoadPanoids = new Set();
+        const openZoneKeys = new Set();
         if (container.dataset.metaId === metaId) {
             container.querySelectorAll('.gg-admin-location-item').forEach(item => {
                 if (item.querySelector('.gg-admin-location-roads[open]')) {
                     openRoadPanoids.add(item.querySelector('.gg-admin-location-remove')?.dataset.panoid);
                 }
             });
+            container.querySelectorAll('.gg-admin-zone-details[open]').forEach(details => {
+                openZoneKeys.add(details.dataset.zoneKey);
+            });
         }
         container.dataset.metaId = metaId;
 
-        container.innerHTML = linkedLocations.map(location => `
+        // Zones: the centers of one zone sit in a dropdown, collapsed by default.
+        const zoneGroups = new Map();
+        const plainLocations = [];
+        linkedLocations.forEach(location => {
+            const zoneKey = getAdminZoneKey(location, location.scope);
+            if (!zoneKey) {
+                plainLocations.push(location);
+                return;
+            }
+            if (!zoneGroups.has(zoneKey)) {
+                zoneGroups.set(zoneKey, {
+                    zoneKey,
+                    id: location.zone || 'z1',
+                    radiusKm: Number(location.radiusKm),
+                    locations: []
+                });
+            }
+            zoneGroups.get(zoneKey).locations.push(location);
+        });
+
+        const renderZoneGroup = group => `
+            <div class="gg-admin-zone">
+                <details class="gg-admin-zone-details" data-zone-key="${escapeHtml(group.zoneKey)}">
+                    <summary>
+                        <span class="gg-admin-zone-title">Zone ${escapeHtml(group.id)}</span>
+                        <span class="gg-admin-zone-info">${formatZoneRadius(group.radiusKm)} &middot; ${group.locations.length} center${group.locations.length > 1 ? 's' : ''}</span>
+                    </summary>
+                    <div class="gg-admin-zone-items">${group.locations.map(renderLocationItem).join('')}</div>
+                </details>
+                <button type="button" class="gg-admin-zone-remove" data-zone-key="${escapeHtml(group.zoneKey)}" title="Unlink every center of this zone from the meta" aria-label="Unlink every center of this zone from the meta">
+                    <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>`;
+
+        const renderLocationItem = location => `
             <div class="gg-admin-location-item">
                 <button type="button" class="gg-admin-location-open" data-map-url="${escapeHtml(getGoogleMapsUrlForLocation(location))}" title="Open in Google Maps">
                     <svg class="gg-admin-location-pin" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"></path><circle cx="12" cy="10" r="2.5"></circle></svg>
@@ -2592,12 +2702,29 @@
                 </button>
                 ${renderSegmentRoads(location)}
             </div>
-        `).join('');
+        `;
+
+        container.innerHTML = [
+            ...Array.from(zoneGroups.values()).map(renderZoneGroup),
+            ...plainLocations.map(renderLocationItem)
+        ].join('');
 
         container.querySelectorAll('.gg-admin-location-item').forEach(item => {
             const panoid = item.querySelector('.gg-admin-location-remove')?.dataset.panoid;
             const details = item.querySelector('.gg-admin-location-roads');
             if (details && openRoadPanoids.has(panoid)) details.open = true;
+        });
+
+        container.querySelectorAll('.gg-admin-zone-details').forEach(details => {
+            if (openZoneKeys.has(details.dataset.zoneKey)) details.open = true;
+        });
+
+        container.querySelectorAll('.gg-admin-zone-remove').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                unlinkMetaFromAdminZone(metaId, btn.dataset.zoneKey);
+            });
         });
 
         container.querySelectorAll('.gg-admin-location-open').forEach(item => {
@@ -2868,12 +2995,11 @@
 
     function applyLocalLandscapeCenters(metaId, centers) {
         const updatedMap = { ...userLocationMap };
-        const keys = setLandscapeCenterEntries(updatedMap, metaId, centers);
+        const keys = addLandscapeCenterEntries(updatedMap, metaId, centers);
         userLocationMap = updatedMap;
         proximityIndexDirty = true;
 
         const pending = loadPendingLocalChanges();
-        removeLandscapeCenterEntry(pending.locations, metaId);
         keys.forEach(key => {
             pending.locations[key] = { ...updatedMap[key] };
         });
@@ -3484,7 +3610,7 @@
                             ${renderScopePills(ALL_SCOPES)}
                         </div>
                         <div id="gg-admin-landscape-import" style="display:none">
-                            <button type="button" class="gg-btn-secondary" id="gg-admin-landscape-btn">IMPORT FILE (.JSON)</button>
+                            <button type="button" class="gg-btn-secondary" id="gg-admin-landscape-btn">ADD ZONE (.JSON)</button>
                             <input type="file" id="gg-admin-landscape-file" accept=".json,application/json" style="display:none">
                         </div>
                     </div>
@@ -4436,6 +4562,65 @@
         updateAdminLinkButton();
     }
 
+    // Unlinks the meta from every center of ONE zone (a zone has up to ~100 entries).
+    async function unlinkMetaFromAdminZone(metaId, zoneKey) {
+        if (!metaId || !zoneKey) return;
+
+        const meta = getMetaById(metaId);
+        const keys = Object.entries(userLocationMap || {})
+            .filter(([, rawEntry]) => {
+                const entry = normalizeLocationEntry(rawEntry);
+                return entry && getLocationMetaIds(entry).includes(metaId) &&
+                    getAdminZoneKey(entry, meta?.scope) === zoneKey;
+            })
+            .map(([key]) => key);
+        if (keys.length === 0) {
+            renderAdminLinkedLocations(metaId);
+            return;
+        }
+
+        const confirmed = await showToolConfirm(
+            'Unlink Zone',
+            `Remove "${meta ? (meta.title || meta.id) : metaId}" from the ${keys.length} center${keys.length > 1 ? 's' : ''} of this zone? ` +
+                'Centers linked to no other meta are removed too.',
+            { confirmText: 'Unlink', cancelText: 'Cancel', danger: true }
+        );
+        if (!confirmed) return;
+
+        const succeeded = await runMutation({
+            ui: {
+                scope: document.getElementById('gg-meta-admin-modal'),
+                busyText: 'Unlinking...',
+                statusText: `Unlinking ${keys.length} centers...`
+            },
+            failTitle: 'Unlink Failed',
+            run: async () => {
+                userLocationMap = { ...userLocationMap };
+                keys.forEach(key => removeMetaIdsFromLocationMap(userLocationMap, key, [metaId]));
+                proximityIndexDirty = true;
+                renderAdminLinkedLocations(metaId);
+                if (currentPanoid) refreshDisplay();
+                updateStatus('Unlinked. Syncing...');
+
+                await updateLocalJsonFile(
+                    USER_LOCATIONS_FILE,
+                    normalizeLocationMap,
+                    locations => {
+                        keys.forEach(key => removeMetaIdsFromLocationMap(locations, key, [metaId]));
+                        return locations;
+                    },
+                    `Unlink meta ${metaId} from a zone (${keys.length} centers) via BetterMetas`
+                );
+
+                updateStatus('Unlinked!');
+                scheduleBackgroundDataRefresh();
+            }
+        });
+        if (succeeded === null) return;
+
+        updateAdminLinkButton();
+    }
+
     // Removes ONE road from the road list of a segment entry. Removing the last road
     // is the same as unlinking the whole location.
     async function removeRoadFromAdminSegment(metaId, panoid, road) {
@@ -4594,7 +4779,7 @@
                 normalizeLocationMap,
                 locations => {
                     addMetaIdsToLocationMap(locations, panoid, [newMeta.id], newMeta.scope);
-                    if (landscapeCenters) setLandscapeCenterEntries(locations, newMeta.id, landscapeCenters);
+                    if (landscapeCenters) addLandscapeCenterEntries(locations, newMeta.id, landscapeCenters);
                     return locations;
                 },
                 `Link ${panoid} to ${newMeta.id} via BetterMetas`
@@ -4647,7 +4832,7 @@
 
         // Captured now: reopening the details view (below) resets the pending import.
         const landscapeImport = isLandscapeScope(form.scope) ? landscapeCenterState.admin : null;
-        const landscapeCenters = buildLandscapeCenters(landscapeImport, form.scope);
+        const landscapeCenters = buildLandscapeCenters(landscapeImport, form.scope, getNextZoneId(userLocationMap, existingMeta.id));
 
         const isUserOwned = isUserMeta(existingMeta.id);
         const saveBtn = document.getElementById('gg-admin-save-btn');
@@ -4698,7 +4883,7 @@
                 }
             }
 
-            // Landscape center: set/replace it for 100km/10km/1km, drop it for any other scope.
+            // Landscape centers: an import adds a zone; every center is dropped when the scope is no longer zone.
             const hadCenterEntry = hasLandscapeCenterEntry(userLocationMap, savedMetaId);
             const removeCenter = isUserOwned && !landscapeCenters &&
                 !isLandscapeScope(updatedMeta.scope) && hadCenterEntry;
@@ -4752,13 +4937,13 @@
                         normalizeLocationMap,
                         locations => {
                             if (landscapeCenters) {
-                                setLandscapeCenterEntries(locations, existingMeta.id, landscapeCenters);
+                                addLandscapeCenterEntries(locations, existingMeta.id, landscapeCenters);
                             } else {
                                 removeLandscapeCenterEntry(locations, existingMeta.id);
                             }
                             return locations;
                         },
-                        `${landscapeCenters ? 'Set' : 'Remove'} landscape center of meta ${existingMeta.id} via BetterMetas`
+                        `${landscapeCenters ? 'Add zone to' : 'Remove landscape centers of'} meta ${existingMeta.id} via BetterMetas`
                     );
                 }
             } else {
@@ -4771,6 +4956,8 @@
             }
 
             updateStatus('Meta saved!');
+            // The import is consumed: saving again must not add the same zone twice.
+            landscapeCenterState.admin = null;
             refreshAfterAdminMutation({ optimisticMeta: updatedMeta }).catch(err => {
                 console.warn('[BetterMetas] Admin data refresh after save failed:', err);
             });
@@ -5098,14 +5285,6 @@
         return R * c;
     }
 
-    const SCOPE_RADIUS_KM = { '1km': 1, '10km': 10, '100km': 100 };
-
-    // Radius of the distance scopes. Every other scope (countrywide, region, city,
-    // road, segment, unique) matches by name / geometry only, so its radius is 0.
-    function getDistanceForScope(scope) {
-        return SCOPE_RADIUS_KM[normalizeScope(scope)] || 0;
-    }
-
     const COUNTRY_ALIAS_MAP = {
         "france": (lat, lng) => {
             // Reunion Check
@@ -5207,9 +5386,11 @@
         const checkMatch = (scope, entry) => {
              scope = normalizeScope(scope);
 
-             // 1. Distance Match
-             const distLimit = getDistanceForScope(scope);
-             if (distLimit > 0) {
+             // 1. Zone match
+             // "zone": the radius belongs to the entry (computed when the zone was imported).
+             if (scope === 'zone') {
+                 const distLimit = entry.radiusKm || 0;
+                 if (!(distLimit > 0)) return false;
                  if (entry.lat !== null && entry.lng !== null) {
                      return getHaversineDistance(curLat, curLng, entry.lat, entry.lng) <= distLimit;
                  }
@@ -5433,7 +5614,7 @@
             road = shortDescription;
         }
 
-        return { address: data.display_name, country, region, city, roadSource, road };
+        return { address: data.display_name, country, region, city, strictCity: a.city || null, roadSource, road };
     }
 
     function applyNominatimGeocode(parsed, latStr, lngStr) {
@@ -5449,7 +5630,7 @@
             }
 
             currentLocationData.placeSources = currentLocationData.placeSources || newPlaceSources();
-            currentLocationData.placeSources.nominatim = { region: parsed.region, city: parsed.city };
+            currentLocationData.placeSources.nominatim = { region: parsed.region, city: parsed.city, strictCity: parsed.strictCity };
             applyPlaceNames();
             if (parsed.road) {
                 const { roadSource } = parsed;

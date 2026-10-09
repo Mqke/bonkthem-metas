@@ -1267,6 +1267,45 @@ textarea.gg-form-input {
     user-select: none;
 }
 
+.gg-admin-zone {
+    width: 100%;
+    display: flex;
+    align-items: flex-start;
+    gap: var(--modal-related-gap);
+}
+
+.gg-admin-zone-details {
+    flex: 1;
+    min-width: 0;
+    font-size: 0.75rem;
+    color: rgba(255,255,255,0.88);
+}
+
+.gg-admin-zone-details summary {
+    display: flex;
+    align-items: center;
+    gap: var(--modal-related-gap);
+    min-height: 22px;
+    padding: var(--modal-related-gap) var(--modal-section-gap);
+    border-radius: var(--modal-control-radius);
+    font-weight: 600;
+    cursor: pointer;
+    user-select: none;
+}
+
+.gg-admin-zone-details summary:hover {
+    background: rgba(255,255,255,0.05);
+}
+
+.gg-admin-zone-info {
+    font-weight: 400;
+    color: rgba(255,255,255,0.6);
+}
+
+.gg-admin-zone-items {
+    padding-left: var(--modal-section-gap);
+}
+
 .gg-admin-location-roads ul {
     margin: 4px 0 0;
     padding: 0;
@@ -1335,7 +1374,8 @@ textarea.gg-form-input {
     opacity: 0.85;
 }
 
-.gg-admin-location-remove {
+.gg-admin-location-remove,
+.gg-admin-zone-remove {
     flex: 0 0 auto;
     width: 22px;
     height: 22px;
@@ -1352,12 +1392,15 @@ textarea.gg-form-input {
 }
 
 .gg-admin-location-remove:hover,
-.gg-admin-location-remove:focus-visible {
+.gg-admin-location-remove:focus-visible,
+.gg-admin-zone-remove:hover,
+.gg-admin-zone-remove:focus-visible {
     background: var(--gg-danger-red-soft);
     outline: none;
 }
 
-.gg-admin-location-remove svg {
+.gg-admin-location-remove svg,
+.gg-admin-zone-remove svg {
     width: 12px;
     height: 12px;
 }
